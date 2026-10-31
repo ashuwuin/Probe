@@ -1,4 +1,4 @@
-# Probe (ClaimCheck)
+# Probe
 
 > **Evidence-Based Open Source Issue and Pull Request Triage**  
 > *Problem 2 — Hacktoberfest Hack Day 2026 (NST × Rishihood University)*
@@ -195,6 +195,12 @@ Probe is evaluated against real closed issues and pull requests from major open-
 - **Sandbox Network & Dependency Isolation**: Probe runs reproduction snippets inside a hardened zero-network container (`--network none`) based on `python:3.11-slim`. Real-world reproduction scripts in external projects frequently require third-party libraries (e.g. `click`, `cffi`, `rich`) that are not pre-installed in the minimal base image. Because Probe disables network access at triage time to prevent SSRF and token leakage, missing imports safely stop at `uncertain` (with reason `missing_dependency`). To evaluate deterministic decision logic with ground truth, Probe's benchmark includes a **checkable cases** group covering symbol AST checks, PR test additions/omissions, and self-contained demo reproductions.
 
 ---
+
+## Known Limitations & Future Work
+
+- **Real-world repros usually need the project's dependencies.** The sandbox image (`python:3.11-slim`) has no third-party packages, so most maintainer-labelled issues stop at `uncertain` (`missing_dependency`). Planned: per-project environment images, built once with network access for chosen benchmark repos and then used with `--network none` for every check. These would never be built automatically for arbitrary repositories, because installing a package runs untrusted code.
+- **Repros in pull requests are not executed.** On a PR the snapshot is the PR's own changed code, so a clean run would mean "the fix works", not "cannot reproduce", and a crash may be a broken fix. These are reported as `inconclusive` until a base-vs-head comparison exists.
+- **Python first.** JS/TS/Rust/Go only get regex-based "does this definition exist" hints.
 
 ## Team & Credits
 

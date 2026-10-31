@@ -10,7 +10,7 @@
 ## Problem statement
 **Problem 2: Evidence-Based Open Source Issue and Pull Request Triage.**
 
-We are building **Probe** (ClaimCheck), a GitHub App that reads incoming issues and pull requests, splits them into individual technical claims, and checks each claim against the repository:
+We are building **Probe**, a GitHub App that reads incoming issues and pull requests, splits them into individual technical claims, and checks each claim against the repository:
 
 - **Static check:** do the files, functions and classes the report names actually exist? Python `ast`.
 - **Sandboxed reproduction:** run the reporter's reproduction steps with no network, no secrets, and CPU, memory and time limits.
