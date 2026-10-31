@@ -292,6 +292,7 @@ def test_webhook_issue_comment_rerun_by_maintainer(client):
     assert data["status"] == "accepted"
     assert data["command"] == "rerun"
     assert data["target"] == "octo/demo#15"
+    assert data["allow_sandbox"] is True
 
 
 def test_webhook_issue_comment_rerun_by_issue_author(client):
@@ -316,6 +317,69 @@ def test_webhook_issue_comment_rerun_by_issue_author(client):
     assert res.status_code == 202
     data = res.json()
     assert data["status"] == "accepted"
+    assert data["allow_sandbox"] is True
+
+
+def test_webhook_issue_comment_rerun_pr_by_fork_author_disallows_sandbox(client):
+    """Author of a fork PR triggering rerun should NOT get sandbox execution."""
+    payload = {
+        "action": "created",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {
+            "number": 25,
+            "user": {"login": "fork_dev"},
+            "pull_request": {"url": "https://api.github.com/repos/octo/demo/pulls/25"},
+        },
+        "comment": {
+            "id": 10025,
+            "body": "/probe rerun",
+            "user": {"login": "fork_dev", "type": "User"},
+            "author_association": "NONE",
+        },
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    data = res.json()
+    assert data["status"] == "accepted"
+    assert data["is_pr"] is True
+    assert data["allow_sandbox"] is False
+
+
+def test_webhook_issue_comment_rerun_pr_by_maintainer_allows_sandbox(client):
+    """Maintainer triggering rerun on a PR authorizes sandbox execution."""
+    payload = {
+        "action": "created",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {
+            "number": 25,
+            "user": {"login": "fork_dev"},
+            "pull_request": {"url": "https://api.github.com/repos/octo/demo/pulls/25"},
+        },
+        "comment": {
+            "id": 10026,
+            "body": "/probe rerun",
+            "user": {"login": "maintainer_dan", "type": "User"},
+            "author_association": "COLLABORATOR",
+        },
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    data = res.json()
+    assert data["status"] == "accepted"
+    assert data["is_pr"] is True
+    assert data["allow_sandbox"] is True
 
 
 def test_webhook_issue_comment_rerun_by_unauthorized_stranger_rejected(client):

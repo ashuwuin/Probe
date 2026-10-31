@@ -412,8 +412,10 @@ async def github_webhook(
                 content={"status": "already_queued", "target": f"{owner}/{repo}#{number}"},
             )
 
-        # Maintainer explicit /probe rerun authorizes sandbox execution even on fork PRs
-        allow_sandbox = True if is_maintainer else True
+        # On PRs, only a maintainer can authorize Docker sandbox execution.
+        # For non-maintainers (such as fork PR authors), sandbox remains disabled.
+        # For standard issues, sandbox is allowed.
+        allow_sandbox = is_maintainer if is_pr else True
 
         _ACTIVE_JOBS.add(dedup_key)
         background_tasks.add_task(
@@ -435,6 +437,7 @@ async def github_webhook(
                 "command": "rerun",
                 "target": f"{owner}/{repo}#{number}",
                 "is_pr": is_pr,
+                "allow_sandbox": allow_sandbox,
             },
         )
 
