@@ -119,6 +119,57 @@ def _normalize(text: str) -> str:
     return " ".join(text.split())
 
 
+_MARKUP_CHARS = frozenset("`*")
+
+
+def _strip_markup_with_map(text: str) -> tuple[str, list[int]]:
+    """Text with Markdown code/emphasis marks removed and whitespace collapsed, plus,
+    for every kept character, its index in the original text."""
+    out: list[str] = []
+    index: list[int] = []
+    for i, ch in enumerate(text):
+        if ch in _MARKUP_CHARS:
+            continue
+        if ch.isspace():
+            if not out or out[-1] == " ":
+                continue
+            ch = " "
+        out.append(ch)
+        index.append(i)
+    while out and out[-1] == " ":
+        out.pop()
+        index.pop()
+    return "".join(out), index
+
+
+def _locate_quote(quote: str | None, text: str) -> str | None:
+    """Return the quote as it appears *verbatim* in ``text``, or None if it doesn't.
+
+    Models often drop Markdown backticks/asterisks when quoting (writing
+    `apply_discount() in shop/billing.py` for "`apply_discount()` in `shop/billing.py`").
+    Matching ignores those marks and whitespace differences, then returns the exact
+    original span, so every kept quote is still a real substring of the report.
+    """
+    if not quote or not quote.strip():
+        return None
+    if quote.strip() in text:
+        return quote.strip()
+    stripped_text, index = _strip_markup_with_map(text)
+    stripped_quote, _ = _strip_markup_with_map(quote.strip())
+    if not stripped_quote:
+        return None
+    pos = stripped_text.find(stripped_quote)
+    if pos < 0:
+        return None
+    start, end = index[pos], index[pos + len(stripped_quote) - 1] + 1
+    # Include marks that wrap the quote's first/last characters so code spans stay balanced.
+    while start > 0 and text[start - 1] in _MARKUP_CHARS:
+        start -= 1
+    while end < len(text) and text[end] in _MARKUP_CHARS and text[start:end].count("`") % 2 == 1:
+        end += 1
+    return text[start:end].strip()
+
+
 def _appears_in(fragment: str | None, text_normalized: str) -> bool:
     fragment = _normalize(fragment or "")
     return bool(fragment) and fragment in text_normalized
@@ -300,9 +351,11 @@ def _apply_guardrails(
     seen: set[tuple[str, str]] = set()
 
     for item in raw:
-        if not _appears_in(item.quote, text_normalized):
+        located = _locate_quote(item.quote, text)
+        if located is None or not _appears_in(located, text_normalized):
             dropped.append({"type": item.type, "quote": item.quote, "reason": "quote_not_in_text"})
             continue
+        item = item.model_copy(update={"quote": located})
         if item.type in PR_ONLY_TYPES and is_pull_request is False:
             dropped.append({"type": item.type, "quote": item.quote, "reason": "pr_claim_in_issue"})
             continue
@@ -347,7 +400,27 @@ def _apply_guardrails(
                 issue_number=issue_number,
             )
         )
-    return kept, dropped
+    return _attach_single_repro(kept, text), dropped
+
+
+def _attach_single_repro(claims: list[Claim], text: str) -> list[Claim]:
+    """Give bug/security claims the report's repro when the model left it empty.
+
+    Small models often skip the `repro` field. When the report contains exactly ONE
+    usable fenced Python block, that block is unambiguous: it is attached verbatim (it is
+    the reporter's own code, never model-written). With zero or several blocks, nothing
+    is attached.
+    """
+    blocks = [m.group(2).strip() for m in _BLOCK_RE.finditer(text)]
+    usable = [b for b in blocks if _is_usable_repro(b)]
+    if len(usable) != 1:
+        return claims
+    return [
+        c.model_copy(update={"repro": usable[0]})
+        if c.type in ("bug_behavior", "security_vuln") and not c.repro
+        else c
+        for c in claims
+    ]
 
 
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
