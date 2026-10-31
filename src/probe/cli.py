@@ -154,30 +154,36 @@ def extract_claims_regex(text: str, is_pull_request: bool | None = None) -> Clai
             )
             claim_idx += 1
 
-        # Check for PR adding tests, with strict negation guarding (e.g. "This PR has no tests")
-        has_tests_negation = bool(
-            re.search(
-                r"\b(?:no|without|lacks?|needs?|missing|zero|not)\s+(?:new\s+)?tests?\b",
-                text,
+        # Check for PR adding tests, with line/sentence contextual negation guarding
+        for line in text.splitlines():
+            line_clean = line.strip()
+            if not line_clean:
+                continue
+            pr_test_match = re.search(
+                r"\b(?:adds?|added|including|with|new|has)\s+(?:[\w-]+\s+)?(?:tests?|coverage)\b",
+                line_clean,
                 re.I,
             )
-        )
-        pr_test_match = re.search(
-            r"(?:adds?|added|including|with|new|has)\s+(?:[\w-]+\s+)?(?:tests?|coverage)",
-            text,
-            re.I,
-        )
-        if pr_test_match and not has_tests_negation:
-            # Also ensure match itself doesn't contain negation word
-            if not re.search(r"\b(?:no|not|without|zero)\b", pr_test_match.group(0), re.I):
-                claims.append(
-                    Claim(
-                        id=f"c{claim_idx}",
-                        type="pr_adds_tests",
-                        quote=pr_test_match.group(0),
+            if pr_test_match:
+                # Check for negation specifically within this same line/statement
+                line_negated = bool(
+                    re.search(
+                        r"\b(?:no|without|lacks?|needs?|missing|zero|not)\b[^\.\n]{0,30}\btests?\b",
+                        line_clean,
+                        re.I,
                     )
+                    or re.search(r"\b(?:no|not|without|zero)\b", pr_test_match.group(0), re.I)
                 )
-                claim_idx += 1
+                if not line_negated:
+                    claims.append(
+                        Claim(
+                            id=f"c{claim_idx}",
+                            type="pr_adds_tests",
+                            quote=pr_test_match.group(0),
+                        )
+                    )
+                    claim_idx += 1
+                    break
 
     # 5. Bug / Symbol claim
     if primary_symbol or primary_file or repro:
@@ -596,12 +602,16 @@ def main() -> None:
         elif args.issue:
             is_pr = False
 
-        # Determine repository name and issue number for report title and link
+        # Determine repository name and issue number for report title and link.
+        # SECURITY & ACCURACY: Never extract repo or issue numbers from arbitrary prose in the text body
+        # (e.g. "Fixes #12" or links to external repos mentioned in the report).
         repo_name = args.repo_name
         if not repo_name:
-            github_match = re.search(r"github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", text)
-            if github_match:
-                repo_name = github_match.group(1).removesuffix(".git")
+            # Check if target argument is a GitHub URL
+            target_str = str(args.target)
+            gh_url_match = re.search(r"github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", target_str)
+            if gh_url_match:
+                repo_name = gh_url_match.group(1).removesuffix(".git")
             else:
                 try:
                     remote_proc = subprocess.run(
@@ -622,9 +632,10 @@ def main() -> None:
 
         issue_num = args.issue_number
         if not issue_num:
-            num_match = re.search(r"(?:issues|pull)/(\d+)|#(\d+)", text)
-            if num_match:
-                issue_num = int(num_match.group(1) or num_match.group(2))
+            target_str = str(args.target)
+            target_num_match = re.search(r"(?:issues|pull)/(\d+)", target_str)
+            if target_num_match:
+                issue_num = int(target_num_match.group(1))
             elif target_path.exists():
                 file_num_match = re.search(r"(\d+)", target_path.stem)
                 if file_num_match:

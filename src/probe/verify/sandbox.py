@@ -26,20 +26,97 @@ from probe.models import Claim, CheckResult
 DEFAULT_IMAGE = "python:3.11-slim"
 MAX_OUTPUT_BYTES = 100_000
 
-# Patterns for files and directories that must NEVER be mounted into the execution sandbox
-IGNORED_REPO_PATTERNS = shutil.ignore_patterns(
-    ".env*",
+# Strict secret and credential filenames that must NEVER be mounted into the execution sandbox.
+# Avoid broad substrings (such as *token*) so real modules like tokenizer.py are preserved.
+IGNORED_SECRET_NAMES = frozenset({
     ".git",
     ".venv",
     "venv",
     "__pycache__",
-    "*.pem",
-    "*.key",
-    "*secret*",
-    "*token*",
-    "*credential*",
     ".pytest_cache",
-)
+    ".netrc",
+    ".pypirc",
+    ".npmrc",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+})
+
+
+def _ignore_secrets_filter(dir_path: str, names: list[str]) -> set[str]:
+    """Excludes credentials, private keys, environment files, and venvs from sandbox mounts.
+
+    Preserves code files containing words like 'token' (e.g. tokenizer.py).
+    """
+    ignored: set[str] = set()
+    for name in names:
+        name_lower = name.lower()
+        if (
+            name_lower in IGNORED_SECRET_NAMES
+            or name_lower.startswith(".env")
+            or name_lower.endswith((".pem", ".key", ".crt"))
+        ):
+            ignored.add(name)
+    return ignored
+
+
+def copy_sanitized_repo(repo_root: Path, target_dir: Path) -> None:
+    """Copies a safe repository snapshot to target_dir.
+
+    1. If inside a git repository, prefers 'git archive HEAD', creating an allowlist
+       of strictly tracked files. Untracked files (.env, .netrc, secrets) and external
+       symlinks are never copied.
+    2. Fallback: uses shutil.copytree with symlinks=True (never dereferencing external
+       symlinks into the copy) and filters out private credentials.
+    """
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if (repo_root / ".git").exists() and shutil.which("git") and shutil.which("tar"):
+        try:
+            p_git = subprocess.Popen(
+                ["git", "archive", "HEAD"],
+                cwd=repo_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            p_tar = subprocess.Popen(
+                ["tar", "-x", "-C", str(target_dir)],
+                stdin=p_git.stdout,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if p_git.stdout:
+                p_git.stdout.close()
+            p_tar.communicate(timeout=10)
+            p_git.wait(timeout=5)
+            if p_tar.returncode == 0:
+                return
+        except Exception:
+            pass
+
+    shutil.copytree(
+        repo_root,
+        target_dir,
+        symlinks=True,
+        ignore=_ignore_secrets_filter,
+        dirs_exist_ok=True,
+    )
+
+
+def _extract_final_exception(stderr: str) -> str | None:
+    """Extracts the exception class name from the final line of a Python traceback.
+
+    Specifically inspects the start of the final line (e.g. 'ValueError: invalid literal')
+    to prevent error messages that mention other error words from misleading the parser.
+    """
+    for line in reversed(stderr.strip().splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^([A-Z][A-Za-z0-9]*(?:Error|Exception))(?::|\s|$)", line)
+        if m:
+            return m.group(1)
+    return None
 
 
 def is_docker_available() -> bool:
@@ -121,7 +198,7 @@ def run_sandbox_repro(
         if repo_root and repo_root.exists():
             clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-")
             clean_workspace = Path(clean_repo_dir.name) / "repo"
-            shutil.copytree(repo_root, clean_workspace, ignore=IGNORED_REPO_PATTERNS, dirs_exist_ok=True)
+            copy_sanitized_repo(repo_root, clean_workspace)
             docker_cmd.extend([
                 "-v", f"{clean_workspace.resolve()}:/workspace:ro",
                 "-e", "PYTHONPATH=/workspace:/workspace/src",
@@ -133,17 +210,30 @@ def run_sandbox_repro(
         # Deliver script via stdin; avoid mid-triage network pulls with --pull never
         docker_cmd.extend(["--pull", "never", docker_image, "python", "-"])
 
-        res = subprocess.run(
-            docker_cmd,
-            input=claim.repro,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
+        # Execute container with bounded memory streams to prevent host OOM
+        with tempfile.TemporaryFile() as out_f, tempfile.TemporaryFile() as err_f:
+            res = subprocess.run(
+                docker_cmd,
+                input=claim.repro,
+                stdout=out_f,
+                stderr=err_f,
+                text=True,
+                timeout=timeout_seconds,
+            )
 
-        # Cap output size keeping the TAIL (where tracebacks and error messages appear)
-        stdout = (res.stdout or "")[-MAX_OUTPUT_BYTES:].strip()
-        stderr = (res.stderr or "")[-MAX_OUTPUT_BYTES:].strip()
+            # Cap output size keeping the TAIL (where tracebacks and error messages appear)
+            if hasattr(res, "stdout") and isinstance(res.stdout, str):
+                stdout = res.stdout[-MAX_OUTPUT_BYTES:].strip()
+                stderr = (res.stderr or "")[-MAX_OUTPUT_BYTES:].strip()
+            else:
+                out_len = out_f.tell()
+                out_f.seek(max(0, out_len - MAX_OUTPUT_BYTES))
+                stdout = out_f.read().decode("utf-8", errors="replace").strip()
+
+                err_len = err_f.tell()
+                err_f.seek(max(0, err_len - MAX_OUTPUT_BYTES))
+                stderr = err_f.read().decode("utf-8", errors="replace").strip()
+
         output_snippet = (stderr or stdout)[-300:] if (stderr or stdout) else "No output"
 
         # Check for Docker daemon/runtime failures (125: docker daemon/image error, 126: cannot invoke, 127: not found, 137: OOM/killed)
@@ -210,9 +300,8 @@ def run_sandbox_repro(
                     },
                 )
 
-            # 5. Extract actual exception from stderr
-            actual_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", stderr)
-            actual_exc = actual_exc_matches[-1] if actual_exc_matches else None
+            # 5. Extract actual exception specifically from the final line of traceback
+            actual_exc = _extract_final_exception(stderr)
 
             # Plain exit code without unhandled exception (e.g. sys.exit(1)) is inconclusive
             if not actual_exc:
@@ -224,14 +313,42 @@ def run_sandbox_repro(
                     details={"reason": "no_exception_raised", "exit_code": res.returncode, "stderr": stderr},
                 )
 
-            # 6. Extract claimed exception from claim fields
-            claimed_text = f"{claim.actual or ''} {claim.expected or ''} {claim.quote or ''}"
-            claimed_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", claimed_text)
+            # 6. Extract claimed exception ONLY from claim.actual and quote (NEVER from claim.expected!)
+            actual_text = claim.actual or ""
+            actual_claimed_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", actual_text)
+
+            expected_text = claim.expected or ""
+            expected_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", expected_text)
+
+            quote_text = claim.quote or ""
+            quote_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", quote_text)
+            # Remove exceptions that were explicitly stated as expected behavior (e.g. "should raise ValueError")
+            quote_bug_matches = [e for e in quote_exc_matches if e not in expected_exc_matches]
+
             has_assert = bool(re.search(r"\bassert\b", claim.repro))
-            if has_assert and not claimed_exc_matches:
+            if actual_claimed_matches:
+                claimed_exc = actual_claimed_matches[0]
+            elif quote_bug_matches:
+                claimed_exc = quote_bug_matches[0]
+            elif has_assert:
                 claimed_exc = "AssertionError"
             else:
-                claimed_exc = claimed_exc_matches[0] if claimed_exc_matches else None
+                claimed_exc = None
+
+            # If report expected an exception (e.g. "should raise ValueError") and actual code correctly raised it,
+            # the code behaved as expected (not a reproduced bug).
+            if expected_exc_matches and actual_exc in expected_exc_matches and (not actual_claimed_matches or actual_exc not in actual_claimed_matches):
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Script raised {actual_exc}, which was the expected behavior stated in the report (not a reproduced bug): {output_snippet}",
+                    details={
+                        "reason": "expected_exception_raised",
+                        "actual_exception": actual_exc,
+                        "exit_code": res.returncode,
+                    },
+                )
 
             # If claim names no error and has no assert, an unexpected error does not confirm the claim
             if not claimed_exc:

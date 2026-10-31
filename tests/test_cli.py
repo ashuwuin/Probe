@@ -229,6 +229,13 @@ def test_regex_extract_no_tests_negation():
         assert not any(c.type == "pr_adds_tests" for c in claims)
 
 
+def test_regex_extract_no_tests_in_earlier_sentence_does_not_cancel_real_claim():
+    # "Previously there were no tests" should NOT cancel a real "adds unit tests" claim in a different sentence
+    text = "Previously there were no tests.\nThis PR adds unit tests for billing."
+    claims = extract_claims_regex(text, is_pull_request=True).claims
+    assert any(c.type == "pr_adds_tests" for c in claims)
+
+
 def test_find_editable_bot_comment_finds_probe_bot():
     comments = [
         {"id": 1, "body": "regular user comment", "user": {"login": "alice", "type": "User"}},

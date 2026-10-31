@@ -249,44 +249,86 @@ def test_sandbox_output_tail_preserved_when_exceeding_limit():
 
 def test_sandbox_sanitizes_repo_excluding_secrets(tmp_path):
     # Secrets like .env, tokens, git, and venvs must NEVER be mounted into the container
+    # But legitimate modules like tokenizer.py must NOT be dropped!
+    from probe.verify.sandbox import copy_sanitized_repo
+
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
     (repo_dir / ".env").write_text("GITHUB_TOKEN=secret_token_123\n")
+    (repo_dir / ".netrc").write_text("machine github.com password secret\n")
+    (repo_dir / ".npmrc").write_text("//registry.npmjs.org/:_authToken=secret\n")
+    (repo_dir / "id_rsa").write_text("-----BEGIN RSA PRIVATE KEY-----\n")
     (repo_dir / "secret.key").write_text("private_key\n")
     (repo_dir / "app.py").write_text("def hello(): pass\n")
+    (repo_dir / "tokenizer.py").write_text("def tokenize(): pass\n")
 
-    captured_cmds = []
+    clean_test_dir = tmp_path / "clean_test"
+    copy_sanitized_repo(repo_dir, clean_test_dir)
 
-    def mock_subprocess_run(cmd, *args, **kwargs):
-        captured_cmds.append(cmd)
-        mock_res = MagicMock()
-        mock_res.returncode = 0
-        mock_res.stdout = ""
-        mock_res.stderr = ""
-        return mock_res
+    # Legitimate code must be preserved
+    assert (clean_test_dir / "app.py").exists()
+    assert (clean_test_dir / "tokenizer.py").exists()
 
-    claim = Claim(id="c1", type="bug_behavior", repro="import app", quote="imports app")
+    # Private credential files must be excluded
+    assert not (clean_test_dir / ".env").exists()
+    assert not (clean_test_dir / ".netrc").exists()
+    assert not (clean_test_dir / ".npmrc").exists()
+    assert not (clean_test_dir / "id_rsa").exists()
+    assert not (clean_test_dir / "secret.key").exists()
+
+
+def test_sandbox_symlink_does_not_dereference_outside_repo(tmp_path):
+    # Symlinks pointing to outside directories must NOT copy external files into the workspace
+    from probe.verify.sandbox import copy_sanitized_repo
+
+    outside_dir = tmp_path / "outside_home"
+    outside_dir.mkdir()
+    (outside_dir / "private_data.txt").write_text("super secret\n")
+
+    repo_dir = tmp_path / "repo_with_link"
+    repo_dir.mkdir()
+    (repo_dir / "main.py").write_text("print('hello')\n")
+    (repo_dir / "link_to_outside").symlink_to(outside_dir)
+
+    clean_dir = tmp_path / "clean_copy"
+    copy_sanitized_repo(repo_dir, clean_dir)
+
+    # Main code is there
+    assert (clean_dir / "main.py").exists()
+    # The link itself is a symlink, NOT a dereferenced directory containing private_data.txt
+    assert (clean_dir / "link_to_outside").is_symlink()
+
+
+def test_sandbox_expected_error_field_does_not_confirm_false_report():
+    # Report: "parse('') should raise ValueError but returns {}"
+    # The code actually DOES raise ValueError correctly, so the report was false.
+    # Probe must NOT mark this as confirmed!
+    claim = Claim(
+        id="c1",
+        type="bug_behavior",
+        repro="parse('')",
+        expected="ValueError: input cannot be empty",
+        actual="returns {}",
+        quote="parse('') should raise ValueError but returns {}",
+    )
+
+    mock_run = MagicMock()
+    mock_run.returncode = 1
+    mock_run.stdout = ""
+    mock_run.stderr = "ValueError: input cannot be empty"
 
     with patch("probe.verify.sandbox.is_docker_available", return_value=True):
-        with patch("subprocess.run", side_effect=mock_subprocess_run):
-            run_sandbox_repro(claim, repo_root=repo_dir)
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "inconclusive"
+            assert res.outcome != "supports"
+            assert res.details.get("reason") in ("expected_exception_raised", "no_claimed_error")
 
-    assert captured_cmds
-    cmd = captured_cmds[0]
-    # Find the mounted path from docker run -v <path>:/workspace:ro
-    mount_idx = cmd.index("-v")
-    mounted_arg = cmd[mount_idx + 1]
-    mounted_host_path = Path(mounted_arg.split(":")[0])
 
-    # The clean mounted workspace must contain app.py but must NOT contain .env or secret.key
-    assert (mounted_host_path / "app.py").exists() or not mounted_host_path.exists()  # may be cleaned up
-    # If not yet cleaned up during the run call, .env was excluded:
-    # We can check directly with the ignore filter:
-    from probe.verify.sandbox import IGNORED_REPO_PATTERNS
-    import shutil
-    clean_test_dir = tmp_path / "clean_test"
-    shutil.copytree(repo_dir, clean_test_dir, ignore=IGNORED_REPO_PATTERNS)
-    assert (clean_test_dir / "app.py").exists()
-    assert not (clean_test_dir / ".env").exists()
-    assert not (clean_test_dir / "secret.key").exists()
+def test_sandbox_final_line_exception_not_fooled_by_message():
+    # Error message contains another error name: 'ValueError: got KeyError instead'
+    # Final line parser must extract ValueError, NOT KeyError!
+    from probe.verify.sandbox import _extract_final_exception
+    stderr = "Traceback (most recent call last):\n  File 'x.py', line 1\nValueError: expected KeyError but got none"
+    assert _extract_final_exception(stderr) == "ValueError"
 
