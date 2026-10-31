@@ -25,12 +25,13 @@ def sign_payload(payload_bytes: bytes, secret: str = SECRET) -> str:
 def client(monkeypatch):
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", SECRET)
     monkeypatch.setenv("PROBE_INSECURE_DEV", "0")
+    monkeypatch.setenv("PROBE_APPLY_LABELS", "false")
     app_module._ACTIVE_JOBS.clear()
     return TestClient(app)
 
 
 # ---------------------------------------------------------------------------
-# Signature Verification Tests
+# Signature & Payload Verification Tests
 # ---------------------------------------------------------------------------
 
 def test_verify_signature_valid():
@@ -62,6 +63,17 @@ def test_verify_signature_dev_mode(monkeypatch):
     assert verify_webhook_signature(b"data", None, None) is True
     monkeypatch.setenv("PROBE_INSECURE_DEV", "0")
     assert verify_webhook_signature(b"data", None, None) is False
+
+
+def test_webhook_malformed_json_body(client):
+    body = b"this is definitely not valid json"
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 400
+    assert "Invalid JSON body" in res.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +144,43 @@ def test_webhook_issues_opened(client):
     assert data["event"] == "issues"
 
 
+def test_webhook_issues_edited_with_body_change_accepted(client):
+    payload = {
+        "action": "edited",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 42, "updated_at": "2026-11-01T01:00:00Z"},
+        "changes": {"body": {"from": "old body text"}},
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    assert res.json()["status"] == "accepted"
+
+
+def test_webhook_issues_edited_without_content_change_ignored(client):
+    payload = {
+        "action": "edited",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 42, "updated_at": "2026-11-01T01:00:00Z"},
+        "changes": {"labels": {"from": []}},  # label change only, neither title nor body
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "ignored"
+    assert "neither title nor body changed" in res.json()["reason"]
+
+
 def test_webhook_issues_deduplication(client):
     payload = {
         "action": "opened",
@@ -170,11 +219,16 @@ def test_webhook_issues_ignored_action(client):
     assert res.json()["status"] == "ignored"
 
 
-def test_webhook_pull_request_synchronize(client):
+def test_webhook_pull_request_synchronize_internal(client):
     payload = {
         "action": "synchronize",
         "repository": {"name": "demo", "owner": {"login": "octo"}},
-        "pull_request": {"number": 99, "head": {"sha": "1234567890abcdef" * 2 + "12345678"}},
+        "pull_request": {
+            "number": 99,
+            "head": {"sha": "1234567890abcdef" * 2 + "12345678", "repo": {"full_name": "octo/demo", "fork": False}},
+            "base": {"repo": {"full_name": "octo/demo"}},
+            "author_association": "MEMBER",
+        },
         "installation": {"id": 54321},
     }
     body = json.dumps(payload).encode("utf-8")
@@ -187,15 +241,44 @@ def test_webhook_pull_request_synchronize(client):
     data = res.json()
     assert data["status"] == "accepted"
     assert data["event"] == "pull_request"
-    assert data["target"] == "octo/demo#99"
+    assert data["allow_sandbox"] is True
 
 
-def test_webhook_issue_comment_rerun_command(client):
+def test_webhook_pull_request_stranger_fork_disallows_sandbox(client):
+    payload = {
+        "action": "opened",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "pull_request": {
+            "number": 100,
+            "head": {"sha": "abcdef1234567890" * 2 + "12345678", "repo": {"full_name": "attacker/demo", "fork": True}},
+            "base": {"repo": {"full_name": "octo/demo"}},
+            "author_association": "NONE",
+        },
+        "installation": {"id": 54321},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "pull_request", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    data = res.json()
+    assert data["status"] == "accepted"
+    assert data["allow_sandbox"] is False
+
+
+def test_webhook_issue_comment_rerun_by_maintainer(client):
     payload = {
         "action": "created",
         "repository": {"name": "demo", "owner": {"login": "octo"}},
-        "issue": {"number": 15},
-        "comment": {"id": 1001, "body": "/probe rerun please", "user": {"login": "alice", "type": "User"}},
+        "issue": {"number": 15, "user": {"login": "alice"}},
+        "comment": {
+            "id": 1001,
+            "body": "/probe rerun please",
+            "user": {"login": "charlie", "type": "User"},
+            "author_association": "MEMBER",
+        },
         "installation": {"id": 12345},
     }
     body = json.dumps(payload).encode("utf-8")
@@ -211,12 +294,61 @@ def test_webhook_issue_comment_rerun_command(client):
     assert data["target"] == "octo/demo#15"
 
 
+def test_webhook_issue_comment_rerun_by_issue_author(client):
+    payload = {
+        "action": "created",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 15, "user": {"login": "alice"}},
+        "comment": {
+            "id": 1002,
+            "body": "/probe rerun",
+            "user": {"login": "alice", "type": "User"},
+            "author_association": "NONE",  # author is not repo member, but opened the issue
+        },
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    data = res.json()
+    assert data["status"] == "accepted"
+
+
+def test_webhook_issue_comment_rerun_by_unauthorized_stranger_rejected(client):
+    payload = {
+        "action": "created",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 15, "user": {"login": "alice"}},
+        "comment": {
+            "id": 1003,
+            "body": "/probe rerun",
+            "user": {"login": "random_stranger", "type": "User"},
+            "author_association": "NONE",
+        },
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ignored"
+    assert "not authorized" in data["reason"]
+
+
 def test_webhook_issue_comment_ignored_bot(client):
     payload = {
         "action": "created",
         "repository": {"name": "demo", "owner": {"login": "octo"}},
         "issue": {"number": 15},
-        "comment": {"id": 1002, "body": "/probe rerun", "user": {"login": "probe[bot]", "type": "Bot"}},
+        "comment": {"id": 1004, "body": "/probe rerun", "user": {"login": "probe[bot]", "type": "Bot"}},
     }
     body = json.dumps(payload).encode("utf-8")
     res = client.post(
@@ -234,7 +366,7 @@ def test_webhook_issue_comment_ignored_no_command(client):
         "action": "created",
         "repository": {"name": "demo", "owner": {"login": "octo"}},
         "issue": {"number": 15},
-        "comment": {"id": 1003, "body": "looks good to me", "user": {"login": "alice", "type": "User"}},
+        "comment": {"id": 1005, "body": "looks good to me", "user": {"login": "alice", "type": "User"}},
     }
     body = json.dumps(payload).encode("utf-8")
     res = client.post(
@@ -291,7 +423,43 @@ def test_process_triage_job_issue_posts_new_comment(tmp_path):
         assert result["overall"] == "uncertain"
 
         mock_gh.post_comment.assert_called_once()
-        mock_gh.add_labels.assert_called_once_with("octo", "demo", 42, ["triage:uncertain"])
+
+
+def test_process_triage_job_replaces_labels_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "PROBE_APPLY_LABELS", True)
+    mock_gh = MagicMock()
+    mock_gh.__enter__.return_value = mock_gh
+
+    mock_issue = MagicMock()
+    mock_issue.title = "Bug"
+    mock_issue.body = "desc"
+    mock_gh.get_issue.return_value = mock_issue
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.path = tmp_path
+    mock_gh.snapshot_for_issue.return_value = mock_snapshot
+    mock_gh.list_comments.return_value = []
+    mock_gh.post_comment.return_value = {"id": 111}
+
+    with patch("probe.app.run_triage_pipeline") as mock_pipeline:
+        mock_pipeline.return_value = (
+            ClaimsResponse(claims=[]),
+            [],
+            [],
+            "confirmed",
+            "Confirmed bug",
+        )
+
+        res = process_triage_job(
+            owner="octo",
+            repo="demo",
+            number=42,
+            is_pr=False,
+            dedup_key="octo/demo#42@v2",
+            client=mock_gh,
+        )
+        assert res["status"] == "success"
+        mock_gh.replace_triage_label.assert_called_once_with("octo", "demo", 42, "triage:confirmed")
 
 
 def test_process_triage_job_pr_updates_existing_comment(tmp_path):
@@ -343,4 +511,3 @@ def test_process_triage_job_pr_updates_existing_comment(tmp_path):
 
         mock_gh.update_comment.assert_called_once()
         mock_gh.post_comment.assert_not_called()
-        mock_gh.add_labels.assert_called_once_with("octo", "demo", 99, ["triage:confirmed"])

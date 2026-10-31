@@ -102,9 +102,28 @@ def test_get_installation_token_failure(rsa_keys):
 
 
 def test_get_client_for_installation_with_github_token(monkeypatch):
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY_PATH", raising=False)
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_direct_token")
     client = get_client_for_installation(123)
     assert client._http.headers.get("authorization") == "Bearer ghp_direct_token"
+
+
+def test_app_credentials_preempt_github_token_for_installation(monkeypatch, rsa_keys):
+    priv_pem, _ = rsa_keys
+    github_auth._TOKEN_CACHE.clear()
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_personal_token_should_not_be_used")
+    monkeypatch.setenv("GITHUB_APP_ID", "4242")
+    monkeypatch.setenv("GITHUB_PRIVATE_KEY", priv_pem)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/app/installations/777/access_tokens":
+            return httpx.Response(201, json={"token": "ghs_app_inst_token"})
+        return httpx.Response(404, json={})
+
+    client = get_client_for_installation(777, transport=httpx.MockTransport(handler))
+    assert client._http.headers.get("authorization") == "Bearer ghs_app_inst_token"
 
 
 def test_get_client_for_installation_with_app_credentials(monkeypatch, rsa_keys):

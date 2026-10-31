@@ -52,7 +52,8 @@ GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
 
 # Bot Identity
 PROBE_BOT_LOGIN=probe[bot]
-PROBE_APPLY_LABELS=true
+PROBE_APPLY_LABELS=false
+PROBE_MAX_CONCURRENT_JOBS=2
 
 # AI Claim Extraction (local Ollama)
 MODEL_BASE_URL=http://localhost:11434/v1
@@ -105,8 +106,8 @@ smee -u https://smee.io/<your-channel> -t http://127.0.0.1:8000/webhook
    - Probe inspects existing comments using `find_editable_bot_comment`.
    - If an existing Probe report is found on the issue/PR (verified with hidden marker `<!-- probe-report -->` and `probe[bot]` identity), it updates the comment in place rather than creating duplicate spam.
 
-5. **Interactive Re-run Commands**:
-   - Any contributor or maintainer can type:
+5. **Interactive Re-run Commands & Permission Control**:
+   - Authorized users (repository `OWNER`, `MEMBER`, `COLLABORATOR`, or the issue author) can type:
      ```
      /probe rerun
      ```
@@ -115,4 +116,16 @@ smee -u https://smee.io/<your-channel> -t http://127.0.0.1:8000/webhook
      /probe triage
      ```
      in an issue or PR comment to trigger a fresh triage run.
+   - Unauthorized comments by third-party strangers are ignored.
    - The bot ignores comments created by bot accounts to strictly prevent infinite webhook feedback loops.
+
+6. **Fork PR Sandbox Protection**:
+   - For pull requests originating from forks, Docker sandbox reproduction is automatically skipped for untrusted authors, executing only deterministic AST and unified diff checkers.
+   - Maintainers can explicitly authorize sandbox reproduction for a fork PR by commenting `/probe rerun`.
+
+7. **Concurrency Limiting & Abuse Prevention**:
+   - Concurrency is throttled to `PROBE_MAX_CONCURRENT_JOBS` (default: 2) to protect host resources.
+   - Issue edits only trigger re-triage if the `title` or `body` actually changed (`changes` field check).
+
+8. **Safe Label Replacement**:
+   - When `PROBE_APPLY_LABELS=true` is enabled, previous `triage:*` labels are removed before applying a new verdict to avoid contradictory labels. Defaults to `false` to avoid unintended automated label mutations.

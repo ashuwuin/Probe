@@ -104,6 +104,8 @@ class FakeGitHub:
         if path == "/repos/octo/demo/issues/7/labels" and request.method == "POST":
             data = json.loads(request.content)
             return httpx.Response(200, json=[{"name": label} for label in data.get("labels", [])])
+        if path.startswith("/repos/octo/demo/issues/7/labels/") and request.method == "DELETE":
+            return httpx.Response(200, json={})
         if path.startswith("/repos/octo/demo/tarball/"):
             return httpx.Response(200, content=self.tarball)
         return httpx.Response(404, json={"message": "Not Found"})
@@ -407,4 +409,10 @@ def test_add_labels(client):
 
     empty = client.add_labels("octo", "demo", 7, [])
     assert empty == []
+
+
+def test_remove_label_and_replace_triage_label(client):
+    assert client.remove_label("octo", "demo", 7, "bug") is True
+    client.replace_triage_label("octo", "demo", 7, "triage:confirmed")
+
 

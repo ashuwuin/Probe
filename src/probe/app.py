@@ -7,10 +7,13 @@ and runs evidence-based triage in the background.
 Guarantees:
 * Checks HMAC-SHA256 signature (X-Hub-Signature-256) on every incoming request.
 * Returns 202 Accepted immediately, well within GitHub's 10-second timeout.
-* Deduplicates in-flight runs using repo#number@state.
-* Idempotent comment posting: finds and edits existing bot comments via
+* Strict permission check on /probe rerun (maintainers or issue author only).
+* Only triggers on issue edits when title or body actually changed.
+* Fork PR protection: skips Docker sandbox for untrusted fork PRs unless maintainer-approved.
+* Deduplicates in-flight runs using repo#number@state and limits concurrent jobs.
+* Idempotent comment management: finds and edits existing bot comments via
   find_editable_bot_comment, preventing comment spam.
-* Supports /probe rerun and /probe triage command comments.
+* Safe label replacement: removes stale triage:* labels before adding a new verdict.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import hmac
 import logging
 import os
 import re
+import threading
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
@@ -45,10 +49,12 @@ app = FastAPI(
 PROBE_BOT_LOGIN = os.environ.get("PROBE_BOT_LOGIN", "probe[bot]")
 PROBE_MODEL = os.environ.get("MODEL_NAME", "qwen3:8b")
 PROBE_USE_LLM = os.environ.get("PROBE_USE_LLM", "true").lower() in ("1", "true", "yes")
-PROBE_APPLY_LABELS = os.environ.get("PROBE_APPLY_LABELS", "true").lower() in ("1", "true", "yes")
+PROBE_APPLY_LABELS = os.environ.get("PROBE_APPLY_LABELS", "false").lower() in ("1", "true", "yes")
+PROBE_MAX_CONCURRENT_JOBS = int(os.environ.get("PROBE_MAX_CONCURRENT_JOBS", "2"))
 
 _RERUN_CMD_RE = re.compile(r"^\s*/probe\s+(?:rerun|triage)\b", re.IGNORECASE | re.MULTILINE)
 _ACTIVE_JOBS: set[str] = set()
+_JOB_SEMAPHORE = threading.BoundedSemaphore(max(1, PROBE_MAX_CONCURRENT_JOBS))
 
 
 # ---------------------------------------------------------------------------
@@ -89,17 +95,29 @@ def process_triage_job(
     dedup_key: str,
     installation_id: int | None = None,
     client: GitHubClient | None = None,
+    allow_sandbox: bool = True,
 ) -> dict[str, Any]:
     """Execute triage for an issue or pull request, then post or update the report comment."""
+    acquired = _JOB_SEMAPHORE.acquire(timeout=60.0)
+    if not acquired:
+        logger.warning("Max concurrent triage jobs reached; dropped %s#%d", f"{owner}/{repo}", number)
+        _ACTIVE_JOBS.discard(dedup_key)
+        return {"status": "rate_limited", "error": "Server reached max concurrent triage capacity"}
+
     try:
         gh = client or get_client_for_installation(installation_id)
         with gh:
+            diff_truncated = False
+            changed_files_truncated = False
+
             if is_pr:
                 pull = gh.get_pull(owner, repo, number)
                 snapshot = gh.snapshot_for_pull(pull)
                 text = f"{pull.title}\n\n{pull.body or ''}"
                 raw_diff = pull.diff
                 changed_files = pull.changed_files
+                diff_truncated = getattr(pull, "diff_truncated", False)
+                changed_files_truncated = getattr(pull, "changed_files_truncated", False)
             else:
                 issue = gh.get_issue(owner, repo, number)
                 snapshot = gh.snapshot_for_issue(issue)
@@ -115,6 +133,9 @@ def process_triage_job(
                 is_pull_request=is_pr,
                 use_llm=PROBE_USE_LLM,
                 model=PROBE_MODEL,
+                allow_sandbox=allow_sandbox,
+                diff_truncated=diff_truncated,
+                changed_files_truncated=changed_files_truncated,
             )
 
             report_md = generate_markdown_report(
@@ -139,7 +160,7 @@ def process_triage_job(
 
             if PROBE_APPLY_LABELS:
                 try:
-                    gh.add_labels(owner, repo, number, [f"triage:{overall_status}"])
+                    gh.replace_triage_label(owner, repo, number, f"triage:{overall_status}")
                 except Exception as exc:
                     logger.warning("Failed to apply triage label: %s", exc)
 
@@ -154,6 +175,7 @@ def process_triage_job(
         logger.exception("Error processing triage job %s#%d: %s", f"{owner}/{repo}", number, exc)
         return {"status": "error", "error": str(exc)}
     finally:
+        _JOB_SEMAPHORE.release()
         _ACTIVE_JOBS.discard(dedup_key)
 
 
@@ -187,16 +209,20 @@ async def github_webhook(
     if not x_github_event:
         raise HTTPException(status_code=400, detail="Missing X-GitHub-Event header")
 
-    payload: dict[str, Any] = await request.json()
+    # 2. JSON Payload Parsing (with 400 for malformed payload)
+    try:
+        payload: dict[str, Any] = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    # 2. Ping Event (GitHub webhook setup handshake)
+    # 3. Ping Event (GitHub webhook setup handshake)
     if x_github_event == "ping":
         return JSONResponse(
             status_code=200,
             content={"status": "ok", "message": "pong", "zen": payload.get("zen")},
         )
 
-    # 3. Extract target repository and installation info
+    # 4. Extract target repository and installation info
     repo_data = payload.get("repository") or {}
     owner = (repo_data.get("owner") or {}).get("login")
     repo = repo_data.get("name")
@@ -210,13 +236,22 @@ async def github_webhook(
 
     action = payload.get("action", "")
 
-    # 4. Issues Event
+    # 5. Issues Event
     if x_github_event == "issues":
         if action not in ("opened", "edited"):
             return JSONResponse(
                 status_code=200,
                 content={"status": "ignored", "reason": f"unhandled issue action: {action}"},
             )
+
+        # On 'edited', only re-run if title or body actually changed
+        if action == "edited":
+            changes = payload.get("changes") or {}
+            if "title" not in changes and "body" not in changes:
+                return JSONResponse(
+                    status_code=200,
+                    content={"status": "ignored", "reason": "neither title nor body changed in issue edit"},
+                )
 
         issue = payload.get("issue") or {}
         number = issue.get("number")
@@ -241,6 +276,7 @@ async def github_webhook(
             is_pr=False,
             dedup_key=dedup_key,
             installation_id=installation_id,
+            allow_sandbox=True,
         )
 
         return JSONResponse(
@@ -253,7 +289,7 @@ async def github_webhook(
             },
         )
 
-    # 5. Pull Request Event
+    # 6. Pull Request Event
     if x_github_event == "pull_request":
         if action not in ("opened", "synchronize", "edited"):
             return JSONResponse(
@@ -261,10 +297,32 @@ async def github_webhook(
                 content={"status": "ignored", "reason": f"unhandled pull_request action: {action}"},
             )
 
+        # On 'edited', only re-run if title or body actually changed
+        if action == "edited":
+            changes = payload.get("changes") or {}
+            if "title" not in changes and "body" not in changes:
+                return JSONResponse(
+                    status_code=200,
+                    content={"status": "ignored", "reason": "neither title nor body changed in PR edit"},
+                )
+
         pr = payload.get("pull_request") or {}
         number = pr.get("number")
         if not number:
             return JSONResponse(status_code=400, content={"error": "missing PR number"})
+
+        # Check for untrusted fork PR
+        head_repo = (pr.get("head") or {}).get("repo") or {}
+        base_repo = (pr.get("base") or {}).get("repo") or {}
+        is_fork = (
+            head_repo.get("fork") is True
+            or head_repo.get("full_name") != base_repo.get("full_name")
+        )
+        author_assoc = (pr.get("author_association") or "").upper()
+        is_maintainer = author_assoc in ("OWNER", "MEMBER", "COLLABORATOR")
+
+        # Skip sandbox on fork PRs unless author is a trusted maintainer
+        allow_sandbox = not (is_fork and not is_maintainer)
 
         head_sha = (pr.get("head") or {}).get("sha") or "unknown_sha"
         dedup_key = f"{owner}/{repo}#{number}@{head_sha}"
@@ -284,6 +342,7 @@ async def github_webhook(
             is_pr=True,
             dedup_key=dedup_key,
             installation_id=installation_id,
+            allow_sandbox=allow_sandbox,
         )
 
         return JSONResponse(
@@ -294,10 +353,11 @@ async def github_webhook(
                 "action": action,
                 "target": f"{owner}/{repo}#{number}",
                 "head_sha": head_sha,
+                "allow_sandbox": allow_sandbox,
             },
         )
 
-    # 6. Issue Comment Event (e.g. /probe rerun)
+    # 7. Issue Comment Event (e.g. /probe rerun)
     if x_github_event == "issue_comment":
         if action not in ("created", "edited"):
             return JSONResponse(
@@ -324,7 +384,20 @@ async def github_webhook(
                 content={"status": "ignored", "reason": "no /probe command found"},
             )
 
+        # Permission check: allow /probe rerun only from OWNER, MEMBER, COLLABORATOR or the issue author
+        author_assoc = (comment.get("author_association") or "").upper()
         issue = payload.get("issue") or {}
+        issue_author = ((issue.get("user") or {}).get("login") or "").lower()
+
+        is_maintainer = author_assoc in ("OWNER", "MEMBER", "COLLABORATOR")
+        is_author = bool(user_login and user_login == issue_author)
+
+        if not (is_maintainer or is_author):
+            return JSONResponse(
+                status_code=200,
+                content={"status": "ignored", "reason": "commenter not authorized to trigger /probe rerun"},
+            )
+
         number = issue.get("number")
         if not number:
             return JSONResponse(status_code=400, content={"error": "missing issue number"})
@@ -339,6 +412,9 @@ async def github_webhook(
                 content={"status": "already_queued", "target": f"{owner}/{repo}#{number}"},
             )
 
+        # Maintainer explicit /probe rerun authorizes sandbox execution even on fork PRs
+        allow_sandbox = True if is_maintainer else True
+
         _ACTIVE_JOBS.add(dedup_key)
         background_tasks.add_task(
             process_triage_job,
@@ -348,6 +424,7 @@ async def github_webhook(
             is_pr=is_pr,
             dedup_key=dedup_key,
             installation_id=installation_id,
+            allow_sandbox=allow_sandbox,
         )
 
         return JSONResponse(
@@ -361,7 +438,7 @@ async def github_webhook(
             },
         )
 
-    # 7. Unhandled events
+    # 8. Unhandled events
     return JSONResponse(
         status_code=200,
         content={"status": "ignored", "reason": f"unsupported event: {x_github_event}"},

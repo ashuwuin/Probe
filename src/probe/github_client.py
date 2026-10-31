@@ -494,3 +494,32 @@ class GitHubClient:
             return []
         res = self._post(f"/repos/{owner}/{repo}/issues/{int(number)}/labels", json={"labels": labels})
         return res.json()
+
+    def remove_label(self, owner: str, repo: str, number: int, label: str) -> bool:
+        """Remove a label from an issue or PR. Returns True if removed, False if 404 (not found)."""
+        _check_name(owner, "owner")
+        _check_name(repo, "repo")
+        try:
+            res = self._http.delete(f"/repos/{owner}/{repo}/issues/{int(number)}/labels/{label}")
+            if res.status_code == 200:
+                return True
+            if res.status_code == 404:
+                return False
+            _raise_for_status(res, f"remove_label:{label}")
+        except httpx.HTTPError as exc:
+            raise GitHubError(f"Network error removing label: {exc.__class__.__name__}") from exc
+        return False
+
+    def replace_triage_label(self, owner: str, repo: str, number: int, new_label: str) -> None:
+        """Remove any existing triage:* labels on an issue/PR and apply new_label."""
+        _check_name(owner, "owner")
+        _check_name(repo, "repo")
+        try:
+            issue = self.get_issue(owner, repo, number)
+            for old_label in issue.labels:
+                if old_label.startswith("triage:") and old_label != new_label:
+                    self.remove_label(owner, repo, number, old_label)
+            if new_label not in issue.labels:
+                self.add_labels(owner, repo, number, [new_label])
+        except Exception as exc:
+            raise GitHubError(f"Failed to replace triage label: {exc}") from exc

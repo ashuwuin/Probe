@@ -248,3 +248,21 @@ def test_parse_plain_unified_diff_without_git_header():
 
 def test_parse_garbage_does_not_crash():
     assert parse_unified_diff("not a diff\n@@ nonsense @@\n+++\n") == {}
+
+
+def test_check_pr_claim_returns_inconclusive_when_diff_or_files_truncated():
+    from probe.models import Claim
+    claim = Claim(id="c1", type="pr_adds_tests", quote="adds tests")
+
+    # When diff_truncated is True
+    res1 = check_pr_claim(claim, changed_files=["src/app.py"], raw_diff="", diff_truncated=True)
+    assert res1.outcome == "inconclusive"
+    assert res1.details["reason"] == "truncated_pr_data"
+    assert "diff was truncated" in res1.evidence
+
+    # When changed_files_truncated is True
+    res2 = check_pr_claim(claim, changed_files=["src/app.py"], raw_diff="", changed_files_truncated=True)
+    assert res2.outcome == "inconclusive"
+    assert res2.details["reason"] == "truncated_pr_data"
+    assert "changed files list was truncated" in res2.evidence
+

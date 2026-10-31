@@ -91,21 +91,30 @@ def get_client_for_installation(
     base_url: str = API_URL,
     transport: httpx.BaseTransport | None = None,
 ) -> GitHubClient:
-    """Construct a GitHubClient authenticated for the given installation, or fallback to GITHUB_TOKEN."""
-    # 1. GITHUB_TOKEN override (for local dev, GitHub Actions, or direct testing)
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        return GitHubClient(token=token, base_url=base_url, transport=transport)
+    """Construct a GitHubClient authenticated for the given installation.
 
-    # 2. GitHub App credentials
+    Precedence:
+    1. If installation_id is provided and GitHub App credentials (GITHUB_APP_ID and
+       private key) are configured, use the App installation token so webhooks
+       always act as the GitHub App (e.g. probe[bot]).
+    2. Fallback to GITHUB_TOKEN for CLI, CI, or local dev when App credentials
+       or installation_id are not provided.
+    3. Fallback to unauthenticated client (public read-only).
+    """
     app_id = os.environ.get("GITHUB_APP_ID")
     private_key = load_private_key()
 
+    # 1. Prefer GitHub App installation authentication when credentials & installation_id exist
     if app_id and private_key and installation_id is not None:
         inst_token = get_installation_token(
             app_id, private_key, installation_id, base_url=base_url, transport=transport
         )
         return GitHubClient(token=inst_token, base_url=base_url, transport=transport)
+
+    # 2. GITHUB_TOKEN fallback (for CLI, CI, or dev without App credentials)
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        return GitHubClient(token=token, base_url=base_url, transport=transport)
 
     # 3. Fallback: unauthenticated client (public read-only)
     return GitHubClient(base_url=base_url, transport=transport)
