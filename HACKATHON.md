@@ -21,7 +21,7 @@ It posts one comment with a verdict per claim: `confirmed`, `cannot-reproduce`, 
 ## Models used, and why
 | Model | Runs via | Used for | Why |
 |---|---|---|---|
-| `qwen3:8b` (Qwen3 8B, Apache-2.0, 4-bit) | Ollama on localhost | Extracting structured claims (file, symbol, behaviour, repro steps) from issue/PR text as JSON | Reliable JSON-schema output in its size class; ~5–6 GB RAM fits our 16 GB Apple Silicon laptops. Thinking mode is disabled for speed. |
+| `qwen2.5:7b` (Qwen 2.5 7B, Apache-2.0, 4-bit) | Ollama on localhost | Extracting structured claims (file, symbol, behaviour, repro steps) from issue/PR text as JSON | Reliable JSON-schema output in its size class; ~5–6 GB RAM fits our 16 GB Apple Silicon laptops. Thinking mode is disabled for speed. |
 
 The LLM only *extracts* claims. Every verdict comes from deterministic checks (AST, sandbox run, coverage), never from the model's opinion.
 
