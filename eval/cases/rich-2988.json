@@ -1,0 +1,25 @@
+{
+  "id": "rich-2988",
+  "url": "https://github.com/Textualize/rich/issues/2988",
+  "kind": "issue",
+  "label": "cannot-reproduce",
+  "maintainer_labels": [
+    "Can't reproduce"
+  ],
+  "state_reason": "completed",
+  "created_at": "2023-06-03T15:50:30+00:00",
+  "sha": "bf3c7c30368b8fb87e88469e65f3b2b7f5671c57",
+  "sha_resolved_by": "default_branch_at:2023-06-03T15:50:30+00:00",
+  "note": "Label \"Can't reproduce\".",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "`rich.print` inspects `__rich__`",
+      "symbol": "rich.print"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "supports"
+  }
+}

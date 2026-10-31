@@ -70,6 +70,9 @@ _LANGUAGE_BY_SUFFIX = {
     ".go": "go",
 }
 
+# Path segments that mean "an installed dependency", not this repository.
+EXTERNAL_PATH_SEGMENTS = frozenset({"site-packages", "dist-packages"})
+
 _SYMBOL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _LINE_SUFFIX_RE = re.compile(r":\d+(?::\d+)?$")
 
@@ -244,6 +247,20 @@ def symbol_matches(defn: Definition, parts: list[str]) -> bool:
     return defn.qualname == dotted or full == dotted or full.endswith(f".{dotted}")
 
 
+def reexport_match(defn: Definition, parts: list[str]) -> bool:
+    """``requests.get`` -> top-level ``get`` in ``src/requests/api.py``.
+
+    The package prefix (``requests``) appears in the module path and the name is
+    a top-level definition, so the package very likely re-exports it. Weaker
+    than an exact match; callers report it with lower confidence.
+    """
+    if len(parts) < 2 or defn.name != parts[-1] or defn.qualname != defn.name:
+        return False
+    prefix = parts[:-1]
+    segments = _module_path(defn.path).split(".")
+    return any(segments[i : i + len(prefix)] == prefix for i in range(len(segments) - len(prefix) + 1))
+
+
 def regex_definition_line(path: Path, language: str, name: str) -> int | None:
     """Return the 1-based line of the first regex definition match, or None."""
     try:
@@ -308,6 +325,14 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
 
     rel_file: str | None = None
     if claim.file:
+        segments = {seg.lower() for seg in re.split(r"[\\/]+", claim.file)}
+        if segments & EXTERNAL_PATH_SEGMENTS:
+            return _result(
+                claim, "inconclusive",
+                "The claimed file is inside an installed dependency (site-packages), not this repository; "
+                "its absence here says nothing about the claim.",
+                reason="external_file",
+            )
         try:
             rel_file = normalize_claim_path(claim.file)
             resolve_inside(root, rel_file)
@@ -406,10 +431,25 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
                 regex_hit = (_rel(root, path), line)
 
     claimed_note = ""
-    if rel_file:
+    if target is not None:
+        claimed_note = f" It is not defined in the named file `{_rel(root, target)}`."
+    elif rel_file:
         claimed_note = (
             f" `{rel_file}` matches several files." if file_candidates else f" `{rel_file}` was not found."
         )
+
+    if not py_hits and len(parts) > 1:
+        reexports = [d for p in all_files if p.suffix in PYTHON_SUFFIXES for d in defs_for(p) if reexport_match(d, parts)]
+        if reexports:
+            d = reexports[0]
+            return _result(
+                claim, "supports",
+                f"`{pretty}` is most likely the {d.kind} defined in `{d.path}` at line {d.line} "
+                f"(re-exported by its package).{claimed_note}",
+                line=d.line, file=d.path, kind=d.kind, qualname=d.qualname,
+                reason="symbol_found_reexport", confidence="medium",
+                file_mismatch=bool(rel_file), matches=len(reexports),
+            )
 
     if py_hits:
         d = py_hits[0]
@@ -433,6 +473,23 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
     # ---- 3. not found: decide between contradicts and inconclusive ----------
     py_files = [p for p in all_files if p.suffix in PYTHON_SUFFIXES]
     known = sorted({d.name for p in py_files for d in defs_for(p)})
+
+    if len(parts) > 1:
+        # "poetry.core.vcs.git.ParsedUrl.parse" or "Text.from_markup": if the leading
+        # name is neither a module/package in this repo nor a definition here, the
+        # symbol most likely lives in a dependency, so absence proves nothing.
+        module_names = set()
+        for path in py_files:
+            rel_parts = PurePosixPath(_rel(root, path)).with_suffix("").parts
+            module_names.update(rel_parts)
+        if parts[0] not in module_names and parts[0] not in known:
+            return _result(
+                claim, "inconclusive",
+                f"`{pretty}` is not defined here, and `{parts[0]}` is not a module or definition in this "
+                "repository, so it probably belongs to a dependency.",
+                reason="external_module",
+                files_scanned=len(all_files),
+            )
     close = difflib.get_close_matches(name, known, n=3, cutoff=0.75)
     details = {"files_scanned": len(all_files), "parse_errors": parse_errors[:20], "truncated": truncated}
 

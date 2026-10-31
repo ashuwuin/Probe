@@ -1,0 +1,29 @@
+{
+  "id": "poetry-7033",
+  "url": "https://github.com/python-poetry/poetry/issues/7033",
+  "kind": "issue",
+  "label": "confirmed",
+  "maintainer_labels": [
+    "area/core",
+    "area/vcs",
+    "kind/bug",
+    "status/confirmed",
+    "version/1.2.2"
+  ],
+  "state_reason": "completed",
+  "created_at": "2022-11-15T10:22:35+00:00",
+  "sha": "281b11a86349007772c30851729bf97ae8f591f2",
+  "sha_resolved_by": "default_branch_at:2022-11-15T10:22:35+00:00",
+  "note": "Labels 'kind/bug' + 'status/confirmed'. The faulty regex is in poetry-core, a separate repository.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "The problem seems to be in `poetry.core.vcs.git.ParsedUrl.parse`",
+      "symbol": "poetry.core.vcs.git.ParsedUrl.parse"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "inconclusive"
+  }
+}

@@ -1,0 +1,10 @@
+diff --git a/shop/billing.py b/shop/billing.py
+index 1111111..2222222 100644
+--- a/shop/billing.py
++++ b/shop/billing.py
+@@ -6,4 +6,4 @@ TAX_RATE = 0.18
+ def apply_discount(price: float, percent: float) -> float:
+     """Return ``price`` after a ``percent`` discount."""
+-    return price - price * percent / 10  # BUG: should divide by 100
++    return price - price * percent / 100
+ 

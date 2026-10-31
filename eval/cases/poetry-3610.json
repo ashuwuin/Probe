@@ -1,0 +1,29 @@
+{
+  "id": "poetry-3610",
+  "url": "https://github.com/python-poetry/poetry/issues/3610",
+  "kind": "issue",
+  "label": "confirmed",
+  "maintainer_labels": [
+    "area/core",
+    "area/pyproject",
+    "good first issue",
+    "kind/bug",
+    "status/confirmed",
+    "version/1.2.1"
+  ],
+  "state_reason": "completed",
+  "created_at": "2021-01-28T22:58:28+00:00",
+  "sha": "d2485b8f849f0bbfd8f6933b625ea07f11f80615",
+  "sha_resolved_by": "default_branch_at:2021-01-28T22:58:28+00:00",
+  "note": "Labels 'kind/bug' + 'status/confirmed'. Behaviour claim about generated METADATA.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "when I `poetry build` it, and try to install wheel package, it won't install any dependencies"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "inconclusive"
+  }
+}

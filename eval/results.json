@@ -1,0 +1,591 @@
+[
+  {
+    "id": "loguru-1448",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "_file_sink.py",
+        "symbol": "write",
+        "version": null,
+        "expected": null,
+        "actual": "thread writes to the wrong file or crashes",
+        "repro": null,
+        "issue_number": null,
+        "quote": "write() checks the rotation condition and then calls self._file.write(message) without a lock."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+          "line_number": 201,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink.write",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+        "quote": "write() checks the rotation condition and then calls self._file.write(message) without a lock."
+      }
+    ]
+  },
+  {
+    "id": "loguru-1471",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "_terminate_file",
+        "version": "0.7.3",
+        "expected": null,
+        "actual": "FileNotFoundError",
+        "repro": null,
+        "issue_number": null,
+        "quote": "This is a race condition in `_terminate_file()` that was previously reported in #519 and #220 but was never fully fixed."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).",
+          "line_number": 269,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink._terminate_file",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).",
+        "quote": "This is a race condition in `_terminate_file()` that was previously reported in #519 and #220 but was never fully fixed."
+      }
+    ]
+  },
+  {
+    "id": "poetry-3610",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "when I `poetry build` it, and try to install wheel package, it won't install any dependencies"
+      }
+    ],
+    "checks": {
+      "c1": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "quote": "when I `poetry build` it, and try to install wheel package, it won't install any dependencies"
+      }
+    ]
+  },
+  {
+    "id": "poetry-6627",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "`poetry install` incorrectly resolve python files in current folder"
+      }
+    ],
+    "checks": {
+      "c1": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "quote": "`poetry install` incorrectly resolve python files in current folder"
+      }
+    ]
+  },
+  {
+    "id": "poetry-7033",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "poetry.core.vcs.git.ParsedUrl.parse",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "The problem seems to be in `poetry.core.vcs.git.ParsedUrl.parse`"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`poetry.core.vcs.git.ParsedUrl.parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56?",
+          "line_number": 56,
+          "details": {
+            "file": "src/poetry/console/io/inputs/run_argv_input.py",
+            "reason": "close_match",
+            "suggestions": [
+              "RunArgvInput._parse (src/poetry/console/io/inputs/run_argv_input.py:56)"
+            ],
+            "files_scanned": 343,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `poetry.core.vcs.git.ParsedUrl.parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56?",
+        "quote": "The problem seems to be in `poetry.core.vcs.git.ParsedUrl.parse`"
+      }
+    ]
+  },
+  {
+    "id": "poetry-7268",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Look P is same in our cases but provided as source code and `poetry` solve as different version."
+      }
+    ],
+    "checks": {
+      "c1": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "quote": "Look P is same in our cases but provided as source code and `poetry` solve as different version."
+      }
+    ]
+  },
+  {
+    "id": "poetry-7465",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "test_env_no_pip",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "test_env_no_pip[flags6-packages6]"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`test_env_no_pip` is defined in `tests/utils/test_env.py` at line 1314 (function).",
+          "line_number": 1314,
+          "details": {
+            "file": "tests/utils/test_env.py",
+            "kind": "function",
+            "qualname": "test_env_no_pip",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `test_env_no_pip` is defined in `tests/utils/test_env.py` at line 1314 (function).",
+        "quote": "test_env_no_pip[flags6-packages6]"
+      }
+    ]
+  },
+  {
+    "id": "poetry-9961",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py",
+        "symbol": "__init__",
+        "version": "2.0.0",
+        "expected": null,
+        "actual": "KeyError: 'format'",
+        "repro": null,
+        "issue_number": null,
+        "quote": "calling a script via `poetry run` always fails with a KeyError"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "The claimed file is inside an installed dependency (site-packages), not this repository; its absence here says nothing about the claim.",
+          "line_number": null,
+          "details": {
+            "reason": "external_file"
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. The claimed file is inside an installed dependency (site-packages), not this repository; its absence here says nothing about the claim.",
+        "quote": "calling a script via `poetry run` always fails with a KeyError"
+      }
+    ]
+  },
+  {
+    "id": "rich-1630",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Escape codes for links aren't always suppressed when not supported"
+      }
+    ],
+    "checks": {
+      "c1": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "quote": "Escape codes for links aren't always suppressed when not supported"
+      }
+    ]
+  },
+  {
+    "id": "rich-2988",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "rich.print",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "`rich.print` inspects `__rich__`"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`rich.print` is defined in `rich/__init__.py` at line 53 (function).",
+          "line_number": 53,
+          "details": {
+            "file": "rich/__init__.py",
+            "kind": "function",
+            "qualname": "print",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `rich.print` is defined in `rich/__init__.py` at line 53 (function).",
+        "quote": "`rich.print` inspects `__rich__`"
+      }
+    ]
+  },
+  {
+    "id": "textual-2178",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "symbol_exists",
+        "file": null,
+        "symbol": "Label",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
+      },
+      {
+        "id": "c2",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "Text.from_markup",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`Label` is defined in `src/textual/widgets/_label.py` at line 6 (class).",
+          "line_number": 6,
+          "details": {
+            "file": "src/textual/widgets/_label.py",
+            "kind": "class",
+            "qualname": "Label",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`Text.from_markup` is not defined here, and `Text` is not a module or definition in this repository, so it probably belongs to a dependency.",
+          "line_number": null,
+          "details": {
+            "reason": "external_module",
+            "files_scanned": 512
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`Label` is defined in `src/textual/widgets/_label.py` at line 6 (class).",
+        "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `Text.from_markup` is not defined here, and `Text` is not a module or definition in this repository, so it probably belongs to a dependency.",
+        "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
+      }
+    ]
+  },
+  {
+    "id": "textual-2863",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "NodeList._append",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Quick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here."
+      },
+      {
+        "id": "c2",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": "NodeList._insert",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Quick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`NodeList._append` is defined in `src/textual/_node_list.py` at line 70 (method).",
+          "line_number": 70,
+          "details": {
+            "file": "src/textual/_node_list.py",
+            "kind": "method",
+            "qualname": "NodeList._append",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`NodeList._insert` is defined in `src/textual/_node_list.py` at line 85 (method).",
+          "line_number": 85,
+          "details": {
+            "file": "src/textual/_node_list.py",
+            "kind": "method",
+            "qualname": "NodeList._insert",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `NodeList._append` is defined in `src/textual/_node_list.py` at line 70 (method).",
+        "quote": "Quick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here."
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Not enough evidence to decide. `NodeList._insert` is defined in `src/textual/_node_list.py` at line 85 (method).",
+        "quote": "Quick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here."
+      }
+    ]
+  }
+]

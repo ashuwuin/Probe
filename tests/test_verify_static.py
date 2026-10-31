@@ -353,3 +353,67 @@ def test_normalize_claim_path():
     for bad in ["../x", "a/../../b", "C:/x", "", "a\x00b"]:
         with pytest.raises(PathEscapeError):
             normalize_claim_path(bad)
+
+
+# ---------------------------------------------------------------- external code (dependencies)
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py",
+        "C:\\Python311\\Lib\\site-packages\\rich\\text.py",
+        "/usr/lib/python3/dist-packages/foo.py",
+    ],
+)
+def test_file_inside_installed_dependency_is_inconclusive(repo, path):
+    result = check_static_symbol(repo, claim("__init__", path))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_file"
+
+
+@pytest.mark.parametrize("symbol", ["poetry.core.vcs.git.ParsedUrl.parse", "Text.from_markup", "requests.get"])
+def test_dotted_symbol_from_dependency_is_inconclusive(repo, symbol):
+    result = check_static_symbol(repo, claim(symbol))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_module"
+
+
+def test_dotted_symbol_with_local_module_prefix_can_still_contradict(repo):
+    result = check_static_symbol(repo, claim("billing.refund_everything"))
+    assert result.outcome == "contradicts"
+
+
+def test_dotted_symbol_with_local_class_prefix_can_still_contradict(repo):
+    result = check_static_symbol(repo, claim("Invoice.refund_everything"))
+    assert result.outcome == "contradicts"
+
+
+# ---------------------------------------------------------------- re-exports and messages
+
+def test_package_reexport_is_supported_with_medium_confidence(tmp_path):
+    pkg = tmp_path / "src" / "requests"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("from .api import get\n")
+    (pkg / "api.py").write_text("def get(url):\n    return url\n")
+    result = check_static_symbol(tmp_path, claim("requests.get"))
+    assert result.outcome == "supports"
+    assert result.details["reason"] == "symbol_found_reexport"
+    assert result.details["confidence"] == "medium"
+    assert result.details["file"] == "src/requests/api.py"
+
+
+def test_reexport_does_not_match_methods_or_wrong_package(tmp_path):
+    pkg = tmp_path / "shop"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "api.py").write_text("class Client:\n    def get(self):\n        pass\n")
+    assert check_static_symbol(tmp_path, claim("shop.get")).details["reason"] != "symbol_found_reexport"
+    (tmp_path / "other.py").write_text("def get():\n    pass\n")
+    assert check_static_symbol(tmp_path, claim("shop.get")).details["reason"] != "symbol_found_reexport"
+
+
+def test_message_when_named_file_exists_but_symbol_missing(repo):
+    result = check_static_symbol(repo, claim("parse_url_v2", "src/payments/billing.py"))
+    assert result.outcome == "contradicts"
+    assert "not defined in the named file `src/payments/billing.py`" in result.evidence
+    assert "was not found" not in result.evidence

@@ -1,0 +1,25 @@
+{
+  "id": "poetry-7465",
+  "url": "https://github.com/python-poetry/poetry/issues/7465",
+  "kind": "issue",
+  "label": "invalid",
+  "maintainer_labels": [
+    "status/invalid"
+  ],
+  "state_reason": "not_planned",
+  "created_at": "2023-02-04T00:33:52+00:00",
+  "sha": "98568d493ddf1a935c4688a88a8bc3e990a2b1b5",
+  "sha_resolved_by": "default_branch_at:2023-02-04T00:33:52+00:00",
+  "note": "Label 'status/invalid', closed as not planned. Local test failures in the reporter's environment.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "test_env_no_pip[flags6-packages6]",
+      "symbol": "test_env_no_pip"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "supports"
+  }
+}

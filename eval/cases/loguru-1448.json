@@ -1,0 +1,27 @@
+{
+  "id": "loguru-1448",
+  "url": "https://github.com/Delgan/loguru/issues/1448",
+  "kind": "issue",
+  "label": "invalid",
+  "maintainer_labels": [
+    "invalid"
+  ],
+  "state_reason": "completed",
+  "created_at": "2026-03-19T13:43:09+00:00",
+  "sha": "8c7d33c4cd349f5b03992973a6b564b01a055359",
+  "sha_resolved_by": "default_branch_at:2026-03-19T13:43:09+00:00",
+  "note": "Label 'invalid'. Maintainer: every sink call goes through Handler, which holds a lock; report flagged as unsupervised AI output.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "write() checks the rotation condition and then calls self._file.write(message) without a lock.",
+      "file": "_file_sink.py",
+      "symbol": "write",
+      "actual": "thread writes to the wrong file or crashes"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "supports"
+  }
+}

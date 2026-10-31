@@ -1,0 +1,26 @@
+diff --git a/requests/models.py b/requests/models.py
+index e7d292d580..d86388182b 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -403,7 +403,7 @@ def prepare_url(self, url, params):
+                 host = self._get_idna_encoded_host(host)
+             except UnicodeError:
+                 raise InvalidURL('URL has an invalid label.')
+-        elif host.startswith(u'*'):
++        elif host.startswith((u'*', u'.')):
+             raise InvalidURL('URL has an invalid label.')
+ 
+         # Carefully reconstruct the network location
+diff --git a/tests/test_requests.py b/tests/test_requests.py
+index 463e8bf47a..29b3aca84e 100644
+--- a/tests/test_requests.py
++++ b/tests/test_requests.py
+@@ -81,6 +81,8 @@ def test_entry_points(self):
+             (InvalidSchema, 'localhost.localdomain:3128/'),
+             (InvalidSchema, '10.122.1.1:3128/'),
+             (InvalidURL, 'http://'),
++            (InvalidURL, 'http://*example.com'),
++            (InvalidURL, 'http://.example.com'),
+         ))
+     def test_invalid_url(self, exception, url):
+         with pytest.raises(exception):
