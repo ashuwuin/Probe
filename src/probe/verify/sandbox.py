@@ -131,8 +131,8 @@ def _exc_matches(name1: str | None, name2: str | None) -> bool:
     return name1.split(".")[-1] == name2.split(".")[-1]
 
 
-def is_docker_available() -> bool:
-    """Checks whether the Docker CLI is installed and the Docker daemon is running."""
+def is_docker_available(image: str = DEFAULT_IMAGE) -> bool:
+    """Checks whether Docker CLI is installed, the daemon is running, and the sandbox image is present."""
     if not shutil.which("docker"):
         return False
     try:
@@ -142,7 +142,15 @@ def is_docker_available() -> bool:
             stderr=subprocess.DEVNULL,
             timeout=3,
         )
-        return res.returncode == 0
+        if res.returncode != 0:
+            return False
+        img_res = subprocess.run(
+            ["docker", "image", "inspect", image],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        )
+        return img_res.returncode == 0
     except Exception:
         return False
 
