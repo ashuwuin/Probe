@@ -111,8 +111,25 @@ def test_confirmed_wins_over_other_core_verdicts():
     assert issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "confirmed")]) == "confirmed"
 
 
-def test_only_supporting_claims_are_used_when_no_core_claims():
+def test_supporting_only_claims_can_be_invalid():
     assert issue_prediction([claim("c1", "symbol_exists")], [_v("c1", "invalid")]) == "invalid"
+
+
+@pytest.mark.parametrize(
+    "statuses",
+    [["confirmed"], ["confirmed", "confirmed"], ["confirmed", "invalid"], ["uncertain"], ["cannot-reproduce"]],
+)
+def test_supporting_only_claims_never_confirm_an_issue(statuses):
+    claims = [claim(f"c{i}", "symbol_exists" if i % 2 else "version_affected") for i in range(len(statuses))]
+    verdicts = [_v(f"c{i}", s) for i, s in enumerate(statuses)]
+    assert issue_prediction(claims, verdicts) == "uncertain"
+
+
+def test_crash_report_with_only_existing_symbol_is_uncertain(repo):
+    """A traceback-only crash report where extraction found just "calculate_tax exists"."""
+    r = evaluate_case(case("invalid", [claim("c1", "symbol_exists", symbol="calculate_tax")]), repo)
+    assert r.verdicts[0].status == "confirmed"   # the function does exist...
+    assert r.prediction == "uncertain"            # ...but that does not confirm the bug report
 
 
 def test_no_claims_is_uncertain():

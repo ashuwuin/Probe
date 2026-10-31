@@ -118,18 +118,33 @@ def _load_claim_verdict_fn() -> tuple[Callable[[Claim, list[CheckResult]], Verdi
 
 
 def issue_prediction(claims: list[Claim], verdicts: list[VerdictResult]) -> str:
-    """Combine claim verdicts. 'invalid' needs every core claim contradicted."""
+    """Combine claim verdicts into one issue-level prediction.
+
+    * Core claims (bug, security, PR claims) carry the report's allegation:
+      ``confirmed`` if any is confirmed, ``invalid`` only if every one is invalid,
+      ``cannot-reproduce`` if one could not be reproduced, otherwise ``uncertain``.
+    * Supporting facts (``symbol_exists``, ``version_affected``) never confirm an
+      issue: "the function exists" does not show the reported bug is real. When a
+      report has only supporting claims, it can be ``invalid`` (every named thing is
+      missing) but otherwise stays ``uncertain``.
+    """
     by_id = {v.claim_id: v for v in verdicts}
-    core = [c for c in claims if c.type in CORE_TYPES] or claims
-    statuses = [by_id[c.id].status for c in core if c.id in by_id]
-    if not statuses:
+    core = [c for c in claims if c.type in CORE_TYPES]
+    if core:
+        statuses = [by_id[c.id].status for c in core if c.id in by_id]
+        if not statuses:
+            return "uncertain"
+        if "confirmed" in statuses:
+            return "confirmed"
+        if all(s == "invalid" for s in statuses):
+            return "invalid"
+        if "cannot-reproduce" in statuses:
+            return "cannot-reproduce"
         return "uncertain"
-    if "confirmed" in statuses:
-        return "confirmed"
-    if all(s == "invalid" for s in statuses):
+
+    supporting = [by_id[c.id].status for c in claims if c.id in by_id]
+    if supporting and all(s == "invalid" for s in supporting):
         return "invalid"
-    if "cannot-reproduce" in statuses:
-        return "cannot-reproduce"
     return "uncertain"
 
 
