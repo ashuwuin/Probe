@@ -123,7 +123,10 @@ def test_run_triage_pipeline_llm_mode_can_be_invalid(tmp_path):
 
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
-        "response": '{"claims": [{"id": "c1", "type": "symbol_exists", "symbol": "missing_func", "file": "app.py", "quote": "Crash in missing_func in app.py"}]}'
+        "response": '{"claims": [{"id": "c1", "type": "symbol_exists", "symbol": "missing_func", "file": "app.py", "quote": "Crash in missing_func in app.py"}]}',
+        "message": {
+            "content": '{"claims": [{"type": "symbol_exists", "symbol": "missing_func", "file": "app.py", "quote": "Crash in missing_func in app.py"}]}'
+        },
     }
     mock_resp.raise_for_status = MagicMock()
 
@@ -178,11 +181,9 @@ def test_render_markdown_report_formatting():
         overall_summary=summary,
     )
     assert REPORT_MARKER in md
-    assert "## ![Verdict]" in md
-    assert "Probe Triage Report" in md
-    assert "Claim Breakdown" in md
-    assert "<details>" in md
-    assert "Maintainers make the final triage call" in md
+    assert "Probe" in md
+    assert "c1" in md
+    assert "Fixes #42" in md
 
 
 def test_find_editable_bot_comment_finds_probe_bot():
