@@ -575,3 +575,11 @@ def test_reported_missing_only_applies_to_the_same_name(repo):
     c = Claim(id="c1", type="bug_behavior", symbol="refund_everything",
               quote="AttributeError: 'Invoice' object has no attribute 'refund'")
     assert check_static_symbol(repo, c).outcome == "contradicts"
+
+
+
+def test_made_up_function_with_a_builtin_attribute_name_is_inconclusive_by_design(repo):
+    """Trade-off: `get` is not defined in the repo, but it is also dict.get, so absence is not proof."""
+    result = check_static_symbol(repo, claim("get"))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "builtin_attribute"

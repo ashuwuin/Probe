@@ -15,6 +15,11 @@ Outcome policy (the verdict layer turns outcomes into verdicts):
                      searches, unsafe paths, or names that appear in the text
                      but have no static definition (dynamic definitions,
                      re-exports, C extensions).
+                     Also, by design: names the report itself says are
+                     missing, and bare names that are attributes of Python
+                     built-ins (``get``, ``replace``, ``append``). Trade-off: a
+                     made-up project function with such a common name is never
+                     contradicted.
 """
 
 from __future__ import annotations
