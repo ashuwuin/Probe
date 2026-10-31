@@ -15,6 +15,7 @@ out file paths, function names, versions, CVE IDs and test claims, marked low co
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import os
@@ -80,7 +81,9 @@ class _LLMClaim(BaseModel):
 
 
 class _LLMOutput(BaseModel):
-    claims: list[_LLMClaim] = Field(default_factory=list, max_length=MAX_CLAIMS)
+    # No max_length here: a long issue with 21 claims must not fail validation and
+    # throw away every claim. Extra claims are cut after the guardrails instead.
+    claims: list[_LLMClaim] = Field(default_factory=list)
 
 
 class ExtractionError(Exception):
@@ -111,10 +114,34 @@ def _keep_if_present(value: str | None, text_normalized: str) -> str | None:
     return value if _appears_in(value, text_normalized) else None
 
 
+_TRACEBACK_MARKERS = re.compile(
+    r'Traceback \(most recent call last\)|^[ \t]*File "[^"]+", line \d+', re.MULTILINE
+)
+
+
+def _is_runnable_python(snippet: str | None) -> bool:
+    """A repro is only usable if it is Python source, not a log or a pasted traceback.
+
+    The sandbox executes `repro`, so a traceback that happens to appear in the issue
+    text must never be accepted as one.
+    """
+    if not snippet or not snippet.strip() or _TRACEBACK_MARKERS.search(snippet):
+        return False
+    try:
+        ast.parse(snippet)
+    except (SyntaxError, ValueError):
+        return False
+    return True
+
+
 def _apply_guardrails(
-    raw: list[_LLMClaim], text: str, *, is_pull_request: bool
+    raw: list[_LLMClaim], text: str, *, is_pull_request: bool | None
 ) -> tuple[list[Claim], list[dict]]:
-    """Return (kept claims, dropped claims with the reason each was dropped)."""
+    """Return (kept claims, dropped claims with the reason each was dropped).
+
+    `is_pull_request=None` means "unknown": PR-only claims are kept (the PR checker will
+    report them as inconclusive) instead of being silently dropped.
+    """
     text_normalized = _normalize(text)
     kept: list[Claim] = []
     dropped: list[dict] = []
@@ -124,7 +151,7 @@ def _apply_guardrails(
         if not _appears_in(item.quote, text_normalized):
             dropped.append({"type": item.type, "quote": item.quote, "reason": "quote_not_in_text"})
             continue
-        if item.type in PR_ONLY_TYPES and not is_pull_request:
+        if item.type in PR_ONLY_TYPES and is_pull_request is False:
             dropped.append({"type": item.type, "quote": item.quote, "reason": "pr_claim_in_issue"})
             continue
         key = (item.type, _normalize(item.quote))
@@ -136,6 +163,12 @@ def _apply_guardrails(
         if item.type == "version_affected" and version is None:
             dropped.append({"type": item.type, "quote": item.quote, "reason": "version_not_in_text"})
             continue
+        if len(kept) >= MAX_CLAIMS:
+            dropped.append({"type": item.type, "quote": item.quote, "reason": "claim_limit"})
+            continue
+        repro = _keep_if_present(item.repro, text_normalized)
+        if not _is_runnable_python(repro):
+            repro = None  # the sandbox runs this: Python source only, never a traceback
         issue_number = item.issue_number
         if issue_number is not None and not re.search(rf"#{issue_number}\b", text):
             issue_number = None
@@ -149,7 +182,7 @@ def _apply_guardrails(
                 version=version,
                 expected=item.expected,
                 actual=item.actual,
-                repro=_keep_if_present(item.repro, text_normalized),
+                repro=repro,
                 issue_number=issue_number,
             )
         )
@@ -231,7 +264,9 @@ _FILE_RE = re.compile(
     r"(?<![\w/.-])((?:[\w.-]+/)*[\w.-]+\.(?:py|pyi|js|jsx|ts|tsx|mjs|cjs|rs|go|java|kt|rb|php|"
     r"c|h|cc|cpp|hpp|cs|swift|toml|cfg|ini|yaml|yml|json))\b"
 )
-_CALL_RE = re.compile(r"\b([A-Za-z_][\w.]*)\s*\(\s*[^()]{0,80}\)")
+# A call like `round_price(2.5)`: the name must be directly followed by "(" (no space),
+# so prose such as "The app crashes (see the log below)" is not read as a function.
+_CALL_RE = re.compile(r"(?<![\w.])([A-Za-z_][\w.]*)\((?=[^()\n]{0,80}\))")
 _BACKTICK_RE = re.compile(r"`([A-Za-z_][\w.]*)(?:\(\))?`")
 _VERSION_RE = re.compile(
     r"(?<![\w.])v?(\d+\.\d+(?:\.\d+)?(?:[-.]?(?:rc|a|b|dev)\d*)?)(?!\w|\.\w)"
@@ -275,7 +310,24 @@ _FENCE_RE = re.compile(r"```[\w+-]*\n(.*?)```", re.DOTALL)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 # Words that look like calls in prose but aren't code symbols.
-_CALL_STOPWORDS = {"e.g", "i.e", "etc", "see", "note", "and", "or", "if", "for", "the", "a"}
+# Words that look like calls in prose but aren't code symbols, e.g. "fails(sometimes)".
+_CALL_STOPWORDS = {
+    "a", "also", "an", "and", "app", "bug", "but", "called", "code", "crash", "crashed",
+    "crashes", "e.g", "error", "errors", "etc", "example", "fail", "failed", "fails", "fix",
+    "for", "function", "i.e", "if", "in", "issue", "log", "method", "note", "of", "on", "or",
+    "page", "see", "sometimes", "the", "then", "this", "to", "version", "when", "with",
+}
+
+
+def _looks_like_code(name: str) -> bool:
+    """A bare (non-backticked) call must look like an identifier, not an English word."""
+    return (
+        "_" in name
+        or "." in name
+        or any(ch.isdigit() for ch in name)
+        or (name[:1].islower() and any(ch.isupper() for ch in name[1:]))  # camelCase
+        or (name[:1].isupper() and any(ch.isupper() for ch in name[1:]))  # PascalCase
+    )
 
 
 def _sentences(text: str) -> list[str]:
@@ -286,8 +338,13 @@ def _sentences(text: str) -> list[str]:
 
 def _symbols_in(sentence: str, files: list[str]) -> list[str]:
     found: list[str] = []
-    for match in [*_CALL_RE.finditer(sentence), *_BACKTICK_RE.finditer(sentence)]:
-        name = match.group(1).rsplit(".", 1)[-1]  # module.func -> func
+    candidates = [(m.group(1), False) for m in _CALL_RE.finditer(sentence)]
+    candidates += [(m.group(1), True) for m in _BACKTICK_RE.finditer(sentence)]
+    candidates.sort(key=lambda item: sentence.find(item[0]))
+    for raw, backticked in candidates:
+        if not backticked and not _looks_like_code(raw):
+            continue  # "parse(x)" in prose is too ambiguous for a low-confidence path
+        name = raw.rsplit(".", 1)[-1]  # module.func -> func
         if name.lower() in _CALL_STOPWORDS or any(name in f for f in files):
             continue
         if name not in found:
@@ -299,7 +356,7 @@ def _first_runnable_snippet(text: str) -> str | None:
     """First fenced code block that is code, not a pasted traceback or log."""
     for match in _FENCE_RE.finditer(text):
         block = match.group(1).strip()
-        if block and not _PY_FRAME_RE.search(block) and "Traceback" not in block:
+        if _is_runnable_python(block):
             return block
     return None
 
@@ -313,8 +370,12 @@ def _template_fields(text: str) -> dict[str, str]:
     return fields
 
 
-def regex_extract(text: str, *, is_pull_request: bool = False) -> list[Claim]:
-    """Best-effort extraction without a model (low confidence)."""
+def regex_extract(text: str, *, is_pull_request: bool | None = None) -> list[Claim]:
+    """Best-effort extraction without a model (low confidence).
+
+    PR wording ("Fixes #N", "adds tests") is ignored only when the text is known to be
+    an issue (`is_pull_request=False`).
+    """
     claims: list[Claim] = []
     repro = _first_runnable_snippet(text)
     template = _template_fields(text)
@@ -360,7 +421,7 @@ def regex_extract(text: str, *, is_pull_request: bool = False) -> list[Claim]:
         if _CRASH_RE.search(sentence) or _WRONG_OUTPUT_RE.search(sentence):
             add_bug(sentence, symbol=symbol, file=file)
 
-        if is_pull_request:
+        if is_pull_request is not False:
             for number in _FIXES_RE.findall(sentence):
                 add("pr_fixes_issue", sentence, issue_number=int(number))
             if _TESTS_RE.search(sentence):
@@ -393,10 +454,18 @@ def extract_claims(
     text: str,
     *,
     extractor: OllamaExtractor | None = None,
-    is_pull_request: bool = False,
+    is_pull_request: bool | None = None,
     retries: int = 1,
 ) -> ClaimsResponse:
-    """Extract claims with the local model, falling back to regex if it fails."""
+    """Extract claims with the local model, falling back to regex if it fails.
+
+    Pass `is_pull_request=True` for pull requests and `False` for issues. Only `False`
+    drops PR-only claims ("Fixes #N", "adds tests"); the default `None` keeps them, so
+    a caller that forgets the flag still gets the PR's claims.
+
+    Claims from the regex fallback come back with `confidence="low"`. The verdict
+    rules must not turn them into `invalid` (see docs/ARCHITECTURE.md §5).
+    """
     extractor = extractor or OllamaExtractor()
     text = _prepare_text(text)
     if not text:

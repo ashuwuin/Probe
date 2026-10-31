@@ -324,6 +324,57 @@ def test_prompt_injection_cannot_add_claims():
     assert result.dropped_claims[0]["reason"] == "quote_not_in_text"
 
 
+def test_traceback_is_never_accepted_as_repro():
+    """A traceback appears in the text, so the quote check alone would accept it."""
+    traceback = (
+        "Traceback (most recent call last):\n"
+        '  File "billing.py", line 88, in calculate_tax\n'
+        "ValueError: amount must be positive"
+    )
+    text = f"It crashes:\n```\n{traceback}\n```"
+    reply = ollama_reply([{"type": "bug_behavior", "quote": "It crashes:", "repro": traceback}])
+    with mock_post(reply):
+        claim = extract_claims(text).claims[0]
+    assert claim.repro is None
+
+
+@pytest.mark.parametrize(
+    "repro",
+    ["pip install billing && python run.py", "$ calculate-tax --amount -5", "File not found"],
+)
+def test_repro_that_is_not_python_is_cleared(repro):
+    text = f"It crashes when I run this:\n```\n{repro}\n```"
+    reply = ollama_reply([{"type": "bug_behavior", "quote": "It crashes when I run this:", "repro": repro}])
+    with mock_post(reply):
+        assert extract_claims(text).claims[0].repro is None
+
+
+def test_more_than_twenty_claims_are_truncated_not_rejected():
+    lines = [f"Function `func_{i}()` crashes." for i in range(25)]
+    text = "\n".join(lines)
+    reply = ollama_reply([{"type": "bug_behavior", "quote": line} for line in lines])
+    with mock_post(reply):
+        result = extract_claims(text)
+    assert result.method == "llm"  # not a fallback: the model's answer is used
+    assert len(result.claims) == 20
+    assert [c.id for c in result.claims] == [f"c{i}" for i in range(1, 21)]
+    assert [d["reason"] for d in result.dropped_claims] == ["claim_limit"] * 5
+
+
+def test_unknown_kind_keeps_pull_request_claims():
+    """A caller that forgets is_pull_request must not silently lose a PR's claims."""
+    text = "Fixes #12. This PR adds unit tests for calculate_tax."
+    reply = ollama_reply(
+        [
+            {"type": "pr_fixes_issue", "quote": "Fixes #12.", "issue_number": 12},
+            {"type": "pr_adds_tests", "quote": "This PR adds unit tests for calculate_tax."},
+        ]
+    )
+    with mock_post(reply):
+        result = extract_claims(text)  # no is_pull_request
+    assert [c.type for c in result.claims] == ["pr_fixes_issue", "pr_adds_tests"]
+
+
 # --------------------------------------------------------------------------- failures
 
 
@@ -489,6 +540,52 @@ def test_regex_never_uses_a_traceback_as_repro():
         '  File "billing.py", line 88, in calculate_tax\nValueError: boom\n```'
     )
     assert all(c.repro is None for c in regex_extract(text))
+
+
+def test_regex_prose_parenthesis_is_not_a_function():
+    """Regression: "crashes (see the log below)" used to become a function named `crashes`,
+    which the static checker can't find, turning a real crash report into `invalid`."""
+    claims = regex_extract("The app crashes (see the log below) when I open the settings page.")
+    assert [c.type for c in claims] == ["bug_behavior"]
+    assert all(c.symbol is None for c in claims)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "It fails(sometimes) on startup.",  # stopword, even without a space
+        "Calling parse (x) is slow.",  # space before the parenthesis
+        "Then parse(x) breaks.",  # plain English-looking word, not backticked
+        "See also (issue 12).",
+    ],
+)
+def test_regex_ambiguous_calls_are_not_symbols(text):
+    assert all(c.symbol is None for c in regex_extract(text))
+
+
+@pytest.mark.parametrize(
+    "text, symbol",
+    [
+        ("Calling parse_url(x) breaks.", "parse_url"),
+        ("Calling parseUrl(x) breaks.", "parseUrl"),
+        ("Calling HttpClient() breaks.", "HttpClient"),
+        ("Calling urllib.parse.urlsplit(x) breaks.", "urlsplit"),
+        ("Calling md5sum(x) breaks.", "md5sum"),
+        ("Calling `parse` breaks.", "parse"),  # backticks always count as code
+    ],
+)
+def test_regex_code_like_calls_are_symbols(text, symbol):
+    assert symbol in [c.symbol for c in regex_extract(text)]
+
+
+def test_regex_shell_block_is_not_used_as_repro():
+    text = "It crashes:\n```bash\npip install billing && billing --tax -5\n```"
+    assert all(c.repro is None for c in regex_extract(text))
+
+
+def test_regex_unknown_kind_keeps_pull_request_wording():
+    claims = regex_extract("Fixes #12 and adds tests.")
+    assert {c.type for c in claims} == {"pr_fixes_issue", "pr_adds_tests"}
 
 
 @pytest.mark.parametrize(
