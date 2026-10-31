@@ -154,21 +154,28 @@ def _keep_if_present(value: str | None, text_normalized: str) -> str | None:
     return value if _appears_in(value, text_normalized) else None
 
 
-# Python's own library and installed packages: a traceback frame here is not the project's
-# code, so its file/function must never be checked against the repository (it would be
-# "not found" and turn a real crash into `invalid`).
-_LIBRARY_PATH_RE = re.compile(
-    r"site-packages|dist-packages|[\\/]lib[\\/]python\d|[A-Za-z]:\\Python\d+\\Lib\\|"
-    r"[\\/]\.pyenv[\\/]|[\\/]Python\.framework[\\/]|^<frozen |^<string>$|^<stdin>$|python\d+\.zip"
+# Python's own standard library: a traceback frame here (e.g. json/decoder.py) is never the
+# project's code, so its file/function must not be checked against the repository (it would
+# be "not found" and turn a real crash into `invalid`).
+# Installed packages (site-packages/dist-packages) are NOT skipped: when a user reports a bug
+# in a package they installed, those frames ARE the project's code. Their path is passed on
+# unchanged; the static checker decides whether site-packages/<pkg>/... is this repo.
+_STDLIB_PATH_RE = re.compile(
+    r"[\\/]lib[\\/]python\d[\d.]*[\\/]|[A-Za-z]:\\Python\d+\\Lib\\|[\\/]Python\.framework[\\/]|"
+    r"^<frozen |^<string>$|^<stdin>$|python\d+\.zip"
 )
+_INSTALLED_PACKAGE_RE = re.compile(r"[\\/](?:site|dist)-packages[\\/]")
 
 
 def _is_library_path(path: str | None) -> bool:
-    return bool(path) and bool(_LIBRARY_PATH_RE.search(path))
+    """True for Python's standard library only (never for installed packages)."""
+    if not path or _INSTALLED_PACKAGE_RE.search(path):
+        return False
+    return bool(_STDLIB_PATH_RE.search(path))
 
 
 def _without_library_frames(text: str) -> str:
-    """The text minus traceback frame lines that point into library code."""
+    """The text minus traceback frame lines that point into Python's standard library."""
     return _PY_FRAME_RE.sub(
         lambda m: "" if _is_library_path(m.group(1)) else m.group(0), text
     )
@@ -192,6 +199,52 @@ PRODUCT_NAMES = frozenset(
 
 def _is_product_name(value: str | None) -> bool:
     return bool(value) and value.strip().lower() in PRODUCT_NAMES
+
+
+def _written_as_code(name: str, text: str) -> bool:
+    """`Node` in backticks, in a code block, or as `class Node` / `def node` is code,
+    even though "Node" in prose is a platform. Graph/tree libraries have Node and Edge."""
+    pattern = _token_pattern(name, "symbol")
+    if re.search(rf"\b(?:class|def)\s+{re.escape(name)}\b", text):
+        return True
+    spans = [m.group(2) for m in _BLOCK_RE.finditer(text)]
+    spans += [m.group(1) for m in _INLINE_CODE_RE.finditer(text)]
+    return any(pattern.search(span) for span in spans)
+
+
+def _is_prose_product_name(value: str | None, text: str) -> bool:
+    return _is_product_name(value) and not _written_as_code(value.strip(), text)
+
+
+# Exception/error names such as ValueError, json.decoder.JSONDecodeError, KeyboardInterrupt.
+_ERROR_NAME_RE = re.compile(
+    r"\b(?:[A-Za-z_]\w*\.)*([A-Z]\w*(?:Error|Exception|Warning|Exit|Interrupt|Fault))\b"
+)
+
+
+def _drop_invented_errors(value: str | None, text_normalized: str) -> str | None:
+    """Clear `expected`/`actual` if it names an error the report never mentions.
+
+    The sandbox compares the error a repro raises with the claimed one, so an invented
+    "raises ValueError" on a "returns the wrong value" report could produce a false
+    `confirmed` if the script happens to raise ValueError.
+    """
+    if not value:
+        return None
+    for match in _ERROR_NAME_RE.finditer(value):
+        if not _token_pattern(match.group(1), "symbol").search(text_normalized):
+            return None
+    return value
+
+
+def _is_usable_repro(snippet: str | None) -> bool:
+    """Runnable Python that actually does something: at least one call, import, assert or
+    raise. A bare `KeyError` or `None` parses as Python, runs and exits cleanly, which
+    would turn a "crashes" claim into a false cannot-reproduce."""
+    if not _is_runnable_python(snippet):
+        return False
+    actions = (ast.Call, ast.Import, ast.ImportFrom, ast.Assert, ast.Raise)
+    return any(isinstance(node, actions) for node in ast.walk(ast.parse(snippet)))
 
 
 # ---- (1) repro must be a whole code block
@@ -268,18 +321,18 @@ def _apply_guardrails(
         # The sandbox runs `repro`: it must be a WHOLE code block from the text (never a
         # cut-off half) and Python source (never a pasted traceback).
         repro = item.repro if item.repro and _normalize(item.repro) in snippets else None
-        if not _is_runnable_python(repro):
+        if not _is_usable_repro(repro):
             repro = None
         file = None
-        if not _is_library_path(item.file) and not _is_product_name(item.file):
+        if not _is_library_path(item.file) and not _is_prose_product_name(item.file, text):
             file = _keep_if_token(item.file, project_normalized, "file")
         symbol = _clean_symbol(item.symbol)
-        symbol = None if _is_product_name(symbol) else _keep_if_token(
+        symbol = None if _is_prose_product_name(symbol, text) else _keep_if_token(
             symbol, project_normalized, "symbol"
         )
         issue_number = item.issue_number
-        if issue_number is not None and not re.search(rf"#{issue_number}\b", text):
-            issue_number = None
+        if issue_number is not None and not re.search(rf"#{issue_number}\b", item.quote):
+            issue_number = None  # must be in the claim's own sentence, not anywhere in the text
         kept.append(
             Claim(
                 id=f"c{len(kept) + 1}",
@@ -288,8 +341,8 @@ def _apply_guardrails(
                 file=file,
                 symbol=symbol,
                 version=version,
-                expected=item.expected,
-                actual=item.actual,
+                expected=_drop_invented_errors(item.expected, text_normalized),
+                actual=_drop_invented_errors(item.actual, text_normalized),
                 repro=repro,
                 issue_number=issue_number,
             )
@@ -303,6 +356,9 @@ _CHECKLIST_RE = re.compile(r"^[ \t]*[-*][ \t]+\[[ xX]\][^\n]*\n?", re.MULTILINE)
 _BLOCK_RE = re.compile(r"(```[^\n]*\n)(.*?)(```)", re.DOTALL)
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 TRUNCATION_MARKER = "\n[... truncated by Probe ...]\n"
+# The report is wrapped in these before it goes to the model; a report containing them could
+# fake the end of the untrusted section and append its own "instructions".
+_DELIMITER_RE = re.compile(r"<<<\s*(?:BEGIN|END)_REPORT\s*>>>", re.IGNORECASE)
 
 
 def _shorten_block(match: re.Match) -> str:
@@ -330,6 +386,7 @@ def _condense(text: str) -> str:
     Quotes are still checked against the original text, so nothing here can make an
     invented quote pass.
     """
+    text = _DELIMITER_RE.sub("[delimiter removed]", text)
     text = _HTML_COMMENT_RE.sub("", text)
     text = _IMAGE_RE.sub("", text)
     text = _CHECKLIST_RE.sub("", text)
@@ -515,8 +572,8 @@ def _symbols_in(sentence: str, files: list[str]) -> list[str]:
     for raw, backticked in candidates:
         if not backticked and not _looks_like_code(raw):
             continue  # "parse(x)" in prose is too ambiguous for a low-confidence path
-        if _is_product_name(raw):
-            continue  # "macOS(Sonoma)", "iOS(17)" are platforms, not functions
+        if not backticked and _is_product_name(raw):
+            continue  # "macOS(Sonoma)", "iOS(17)" in prose are platforms; `Node` is code
         name = raw.rsplit(".", 1)[-1]  # module.func -> func
         if name.lower() in _CALL_STOPWORDS or any(name in f for f in files):
             continue
@@ -526,10 +583,10 @@ def _symbols_in(sentence: str, files: list[str]) -> list[str]:
 
 
 def _first_runnable_snippet(text: str) -> str | None:
-    """First fenced code block that is code, not a pasted traceback or log."""
+    """First fenced code block that is real code (not a traceback, log or bare name)."""
     for match in _FENCE_RE.finditer(text):
         block = match.group(1).strip()
-        if _is_runnable_python(block):
+        if _is_usable_repro(block):
             return block
     return None
 
@@ -589,7 +646,10 @@ def regex_extract(text: str, *, is_pull_request: bool | None = None) -> list[Cla
             add_bug(innermost.group(0).strip(), actual=f"{error} (in library code {raised_at})")
 
     for sentence in _sentences(text):
-        files = [f for f in _FILE_RE.findall(sentence) if not _is_product_name(f)]
+        files = [
+            f for f in _FILE_RE.findall(sentence)
+            if not (_is_product_name(f) and f"`{f}`" not in sentence)
+        ]
         symbols = _symbols_in(sentence, files)
         file = files[0] if files else None
         symbol = symbols[0] if symbols else None
