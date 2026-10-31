@@ -16,22 +16,60 @@ def test_sandbox_missing_repro_returns_inconclusive():
 def test_sandbox_unavailable_when_docker_inactive():
     claim = Claim(id="c1", type="bug_behavior", repro="print(1/0)", quote="crashes with ZeroDivisionError")
 
-    with patch("probe.verify.sandbox.is_docker_available", return_value=False):
+    mock_run = MagicMock(returncode=1)
+    with patch("probe.verify.sandbox.is_docker_available", return_value=False), \
+         patch("subprocess.run", return_value=mock_run):
         res = run_sandbox_repro(claim)
         assert res.outcome == "inconclusive"
-        assert res.details.get("reason") in ("sandbox_unavailable", "image_unavailable")
+        assert res.details.get("reason") == "sandbox_unavailable"
         assert "sandbox_unavailable" in res.evidence
+
+
+def test_sandbox_unavailable_when_image_missing():
+    claim = Claim(id="c1", type="bug_behavior", repro="print(1/0)", quote="crashes with ZeroDivisionError")
+
+    mock_run = MagicMock(returncode=0)
+    with patch("probe.verify.sandbox.is_docker_available", return_value=False), \
+         patch("subprocess.run", return_value=mock_run):
+        res = run_sandbox_repro(claim, docker_image="custom-python:3.11")
+        assert res.outcome == "inconclusive"
+        assert res.details.get("reason") == "image_unavailable"
+        assert "custom-python:3.11" in res.evidence
 
 
 def test_sandbox_custom_image_passed_and_checked():
     claim = Claim(id="c1", type="bug_behavior", repro="print(1/0)", quote="crashes with ZeroDivisionError")
 
-    with patch("probe.verify.sandbox.is_docker_available", return_value=False) as mock_avail:
+    mock_run = MagicMock(returncode=1)
+    with patch("probe.verify.sandbox.is_docker_available", return_value=False) as mock_avail, \
+         patch("subprocess.run", return_value=mock_run):
         res = run_sandbox_repro(claim, docker_image="my-custom-python:3.12")
         mock_avail.assert_called_once_with("my-custom-python:3.12")
         assert res.outcome == "inconclusive"
         assert "sandbox_unavailable" in res.evidence
         assert res.details.get("image") == "my-custom-python:3.12"
+
+
+def test_sandbox_chmod_does_not_follow_symlinks(tmp_path):
+    # Security test: ensure repo copy chmod does not alter permissions of external target files
+    external_secret = tmp_path / "id_rsa"
+    external_secret.write_text("PRIVATE KEY")
+    external_secret.chmod(0o600)
+
+    repo_dir = tmp_path / "untrusted_repo"
+    repo_dir.mkdir()
+    symlink_file = repo_dir / "notes.txt"
+    symlink_file.symlink_to(external_secret)
+
+    claim = Claim(id="c1", type="bug_behavior", repro="print('test')", quote="test")
+    mock_run = MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True), \
+         patch("subprocess.run", return_value=mock_run):
+        run_sandbox_repro(claim, repo_root=repo_dir)
+
+    # Assert external file permissions were NEVER modified from 0600
+    assert (external_secret.stat().st_mode & 0o777) == 0o600
 
 
 def test_sandbox_reproduces_failure():

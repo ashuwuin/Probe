@@ -242,18 +242,25 @@ def run_sandbox_repro(
             clean_workspace = Path(clean_repo_dir.name) / "repo"
             copy_sanitized_repo(repo_root, clean_workspace)
             # Ensure workspace directory and files are readable by container user 65534 on Linux hosts
+            # SECURITY: Never follow symlinks when chmodding to prevent modifying host file permissions outside the copy
             try:
                 os.chmod(clean_repo_dir.name, 0o755)
                 os.chmod(clean_workspace, 0o755)
                 for root_dir, dirs, files in os.walk(clean_workspace):
                     for d in dirs:
+                        p = os.path.join(root_dir, d)
+                        if os.path.islink(p):
+                            continue
                         try:
-                            os.chmod(os.path.join(root_dir, d), 0o755)
+                            os.chmod(p, 0o755)
                         except OSError:
                             pass
                     for f in files:
+                        p = os.path.join(root_dir, f)
+                        if os.path.islink(p):
+                            continue
                         try:
-                            os.chmod(os.path.join(root_dir, f), 0o644)
+                            os.chmod(p, 0o644)
                         except OSError:
                             pass
             except OSError:
