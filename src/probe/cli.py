@@ -58,25 +58,24 @@ def find_editable_bot_comment(
     SECURITY GUARANTEE:
     Only matches comments that:
     1. Contain the hidden REPORT_MARKER ('<!-- probe-report -->'), AND
-    2. Were authored by Probe's own bot account (e.g. login is bot_login or ends with '[bot]',
-       and user.type is 'Bot').
+    2. Were authored specifically by Probe's own bot account (e.g. login is bot_login
+       or starts with 'probe' and ends with '[bot]', with user.type == 'Bot').
 
-    Comments authored by ordinary users that contain the marker are strictly ignored,
-    preventing malicious users from tricking Probe into overwriting or hijacking comments.
+    Comments from other bots (e.g. dependabot, codecov, actions) or ordinary users
+    are strictly rejected to prevent comment hijacking or spoofing.
     """
     for comment in comments:
         body = comment.get("body", "")
         user = comment.get("user", {})
-        login = user.get("login", "")
+        login = (user.get("login", "") or "").lower()
         user_type = user.get("type", "")
 
-        is_bot_account = (
-            user_type == "Bot"
-            or login == bot_login
-            or login.lower().endswith("[bot]")
+        is_probe_bot = (
+            login == bot_login.lower()
+            or (login.startswith("probe") and (user_type == "Bot" or login.endswith("[bot]")))
         )
 
-        if REPORT_MARKER in body and is_bot_account:
+        if REPORT_MARKER in body and is_probe_bot:
             return comment
 
     return None
@@ -95,11 +94,11 @@ def extract_claims_regex(text: str, is_pull_request: bool | None = None) -> Clai
     claims: list[Claim] = []
     claim_idx = 1
 
-    # 1. Code blocks: only accept runnable Python code (not pasted tracebacks or logs)
-    code_blocks = re.findall(r"```(?:python)?\s*\n(.*?)\n```", text, re.DOTALL)
+    # 1. Code blocks: only accept runnable Python code (not pasted tracebacks, logs, or expected output blocks)
+    code_matches = list(re.finditer(r"```(?:python)?\s*\n(.*?)\n```", text, re.DOTALL))
     repro: str | None = None
-    for block in code_blocks:
-        block_clean = block.strip()
+    for match in code_matches:
+        block_clean = match.group(1).strip()
         # Skip pasted tracebacks or logs
         if (
             block_clean.startswith("Traceback (most recent call last)")
@@ -107,6 +106,16 @@ def extract_claims_regex(text: str, is_pull_request: bool | None = None) -> Clai
             or block_clean.startswith("Exception")
         ):
             continue
+
+        # Skip code blocks explicitly placed under an 'Expected' heading to avoid false cannot-reproduce
+        preceding_text = text[:match.start()]
+        expected_headings = list(re.finditer(r"(?:^|\n)[ \t#*_-]*(?:expected|should\s+be|works?)[^\n]*[:\-]?\s*$", preceding_text, re.I | re.MULTILINE))
+        if expected_headings:
+            last_heading_pos = expected_headings[-1].start()
+            text_between = preceding_text[last_heading_pos:]
+            if not re.search(r"(?:actual|reproduce|repro|steps|bug|crash)", text_between, re.I):
+                continue
+
         try:
             ast.parse(block_clean)
             repro = block_clean
@@ -145,20 +154,30 @@ def extract_claims_regex(text: str, is_pull_request: bool | None = None) -> Clai
             )
             claim_idx += 1
 
+        # Check for PR adding tests, with strict negation guarding (e.g. "This PR has no tests")
+        has_tests_negation = bool(
+            re.search(
+                r"\b(?:no|without|lacks?|needs?|missing|zero|not)\s+(?:new\s+)?tests?\b",
+                text,
+                re.I,
+            )
+        )
         pr_test_match = re.search(
             r"(?:adds?|added|including|with|new|has)\s+(?:[\w-]+\s+)?(?:tests?|coverage)",
             text,
             re.I,
         )
-        if pr_test_match:
-            claims.append(
-                Claim(
-                    id=f"c{claim_idx}",
-                    type="pr_adds_tests",
-                    quote=pr_test_match.group(0),
+        if pr_test_match and not has_tests_negation:
+            # Also ensure match itself doesn't contain negation word
+            if not re.search(r"\b(?:no|not|without|zero)\b", pr_test_match.group(0), re.I):
+                claims.append(
+                    Claim(
+                        id=f"c{claim_idx}",
+                        type="pr_adds_tests",
+                        quote=pr_test_match.group(0),
+                    )
                 )
-            )
-            claim_idx += 1
+                claim_idx += 1
 
     # 5. Bug / Symbol claim
     if primary_symbol or primary_file or repro:
@@ -299,8 +318,8 @@ def extract_claims(
 
     # probe.extract integration (when LLM is allowed)
     try:
-        from probe.extract import extract_claims as mac1_extract  # type: ignore
-        return mac1_extract(text, is_pull_request=is_pull_request)
+        from probe.extract import extract_claims as nlp_extract  # type: ignore
+        return nlp_extract(text, is_pull_request=is_pull_request)
     except (ImportError, AttributeError):
         pass
 
@@ -415,53 +434,31 @@ def escape_markdown(text: str) -> str:
     return escaped.replace("|", "\\|").replace("\n", " ")
 
 
-def render_markdown_report(
+def _render_builtin_markdown_report(
     claims_resp: ClaimsResponse,
     all_results: list[CheckResult],
     verdicts: list[VerdictResult],
-    overall_status: VerdictStatus | None = None,
-    summary: str | None = None,
     *,
-    overall: str | None = None,
-    overall_summary: str | None = None,
+    overall: str = "uncertain",
+    overall_summary: str = "Triage complete",
     repo: str = "Probe",
     issue_number: int = 1,
 ) -> str:
-    """Formats a GitHub-ready Markdown comment with badges and evidence breakdown.
-
-    Delegates to probe.report.generate_markdown_report if available, passing
-    overall and overall_summary.
-    """
-    final_overall = overall or (overall_status if overall_status else "uncertain")
-    final_summary = overall_summary or (summary if summary else "Triage complete")
-
-    # Delegate to probe.report if present
-    try:
-        from probe.report import generate_markdown_report  # type: ignore
-        return generate_markdown_report(
-            verdicts=verdicts,
-            repo=repo,
-            issue_number=issue_number,
-            extraction=claims_resp,
-            overall=final_overall,
-            overall_summary=final_summary,
-        )
-    except (ImportError, AttributeError):
-        pass
-
+    """Built-in Markdown report formatter for standalone CLI use."""
     badge_colors = {
         "confirmed": "brightgreen",
         "invalid": "red",
         "cannot-reproduce": "yellow",
         "uncertain": "orange",
     }
-    color = badge_colors.get(final_overall, "lightgrey")
-    badge = f"https://img.shields.io/badge/Triage_Verdict-{final_overall.upper()}-{color}?style=flat-square"
+    color = badge_colors.get(overall, "lightgrey")
+    badge = f"https://img.shields.io/badge/Triage_Verdict-{overall.upper()}-{color}?style=flat-square"
 
+    header_title = f"{repo}#{issue_number}" if repo and issue_number else "Probe"
     md = [
         REPORT_MARKER,
-        f"## ![Verdict]({badge}) Probe Triage Report\n",
-        f"**Summary**: {escape_markdown(final_summary)}\n",
+        f"## ![Verdict]({badge}) Probe Triage Report: {header_title}\n",
+        f"**Summary**: {escape_markdown(overall_summary)}\n",
         f"*Extracted with `{claims_resp.model}` ({claims_resp.method}) · Deterministic verification executed*\n",
         "### Claim Breakdown\n",
         "| ID | Type | Status | Confidence | Evidence |",
@@ -495,6 +492,51 @@ def render_markdown_report(
     return "\n".join(md)
 
 
+def render_markdown_report(
+    claims_resp: ClaimsResponse,
+    all_results: list[CheckResult],
+    verdicts: list[VerdictResult],
+    overall_status: VerdictStatus | None = None,
+    summary: str | None = None,
+    *,
+    overall: str | None = None,
+    overall_summary: str | None = None,
+    repo: str = "Probe",
+    issue_number: int = 1,
+) -> str:
+    """Formats a GitHub-ready Markdown comment with badges and evidence breakdown.
+
+    Delegates to probe.report.generate_markdown_report if available, passing
+    overall and overall_summary. Otherwise uses built-in renderer.
+    """
+    final_overall = overall or (overall_status if overall_status else "uncertain")
+    final_summary = overall_summary or (summary if summary else "Triage complete")
+
+    # Delegate to probe.report if present
+    try:
+        from probe.report import generate_markdown_report  # type: ignore
+        return generate_markdown_report(
+            verdicts=verdicts,
+            repo=repo,
+            issue_number=issue_number,
+            extraction=claims_resp,
+            overall=final_overall,
+            overall_summary=final_summary,
+        )
+    except (ImportError, AttributeError):
+        pass
+
+    return _render_builtin_markdown_report(
+        claims_resp,
+        all_results,
+        verdicts,
+        overall=final_overall,
+        overall_summary=final_summary,
+        repo=repo,
+        issue_number=issue_number,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI Entrypoint
 # ---------------------------------------------------------------------------
@@ -513,6 +555,8 @@ def main() -> None:
     triage_parser = subparsers.add_parser("triage", help="Triage an issue or pull request")
     triage_parser.add_argument("target", help="Issue/PR text, or path to text/diff file")
     triage_parser.add_argument("--repo", "-r", default=".", help="Path to repository snapshot (default: .)")
+    triage_parser.add_argument("--repo-name", default=None, help="GitHub repository slug (e.g. owner/repo)")
+    triage_parser.add_argument("--issue-number", "-n", type=int, default=None, help="Issue or PR number")
     triage_parser.add_argument("--diff", default="", help="Path to raw unified diff file (optional)")
     triage_parser.add_argument("--pr", action="store_true", help="Explicitly mark target as a Pull Request")
     triage_parser.add_argument("--issue", action="store_true", help="Explicitly mark target as an Issue")
@@ -552,6 +596,42 @@ def main() -> None:
         elif args.issue:
             is_pr = False
 
+        # Determine repository name and issue number for report title and link
+        repo_name = args.repo_name
+        if not repo_name:
+            github_match = re.search(r"github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", text)
+            if github_match:
+                repo_name = github_match.group(1).removesuffix(".git")
+            else:
+                try:
+                    remote_proc = subprocess.run(
+                        ["git", "remote", "get-url", "origin"],
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    if remote_proc.returncode == 0 and remote_proc.stdout.strip():
+                        m = re.search(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", remote_proc.stdout.strip())
+                        if m:
+                            repo_name = m.group(1).removesuffix(".git")
+                except Exception:
+                    pass
+        if not repo_name:
+            repo_name = repo_path.name if repo_path.name and repo_path.name != "." else "Probe"
+
+        issue_num = args.issue_number
+        if not issue_num:
+            num_match = re.search(r"(?:issues|pull)/(\d+)|#(\d+)", text)
+            if num_match:
+                issue_num = int(num_match.group(1) or num_match.group(2))
+            elif target_path.exists():
+                file_num_match = re.search(r"(\d+)", target_path.stem)
+                if file_num_match:
+                    issue_num = int(file_num_match.group(1))
+        if not issue_num:
+            issue_num = 1
+
         claims_resp, all_results, verdicts, overall_status, overall_summary = run_triage_pipeline(
             text=text,
             repo_root=repo_path,
@@ -578,6 +658,8 @@ def main() -> None:
                     verdicts,
                     overall=overall_status,
                     overall_summary=overall_summary,
+                    repo=repo_name,
+                    issue_number=issue_num,
                 )
             )
         else:

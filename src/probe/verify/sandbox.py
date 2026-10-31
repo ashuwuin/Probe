@@ -18,12 +18,28 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 import uuid
 from pathlib import Path
 from probe.models import Claim, CheckResult
 
 DEFAULT_IMAGE = "python:3.11-slim"
 MAX_OUTPUT_BYTES = 100_000
+
+# Patterns for files and directories that must NEVER be mounted into the execution sandbox
+IGNORED_REPO_PATTERNS = shutil.ignore_patterns(
+    ".env*",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.pem",
+    "*.key",
+    "*secret*",
+    "*token*",
+    "*credential*",
+    ".pytest_cache",
+)
 
 
 def is_docker_available() -> bool:
@@ -98,20 +114,25 @@ def run_sandbox_repro(
         "/tmp:rw,noexec,nosuid,size=64m",
     ]
 
-    # Mount repository read-only and include both root and src-layout in PYTHONPATH
-    if repo_root and repo_root.exists():
-        docker_cmd.extend([
-            "-v", f"{repo_root.resolve()}:/workspace:ro",
-            "-e", "PYTHONPATH=/workspace:/workspace/src",
-            "-w", "/tmp",
-        ])
-    else:
-        docker_cmd.extend(["-w", "/tmp"])
-
-    # Deliver script via stdin; avoid mid-triage network pulls with --pull never
-    docker_cmd.extend(["--pull", "never", docker_image, "python", "-"])
-
+    clean_repo_dir: tempfile.TemporaryDirectory | None = None
     try:
+        # Mount repository read-only and include both root and src-layout in PYTHONPATH.
+        # SECURITY: Always mount a sanitized copy of the repo excluding .env, git, venv, and credentials.
+        if repo_root and repo_root.exists():
+            clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-")
+            clean_workspace = Path(clean_repo_dir.name) / "repo"
+            shutil.copytree(repo_root, clean_workspace, ignore=IGNORED_REPO_PATTERNS, dirs_exist_ok=True)
+            docker_cmd.extend([
+                "-v", f"{clean_workspace.resolve()}:/workspace:ro",
+                "-e", "PYTHONPATH=/workspace:/workspace/src",
+                "-w", "/tmp",
+            ])
+        else:
+            docker_cmd.extend(["-w", "/tmp"])
+
+        # Deliver script via stdin; avoid mid-triage network pulls with --pull never
+        docker_cmd.extend(["--pull", "never", docker_image, "python", "-"])
+
         res = subprocess.run(
             docker_cmd,
             input=claim.repro,
@@ -120,9 +141,9 @@ def run_sandbox_repro(
             timeout=timeout_seconds,
         )
 
-        # Cap output size to prevent memory exhaustion
-        stdout = (res.stdout or "")[:MAX_OUTPUT_BYTES].strip()
-        stderr = (res.stderr or "")[:MAX_OUTPUT_BYTES].strip()
+        # Cap output size keeping the TAIL (where tracebacks and error messages appear)
+        stdout = (res.stdout or "")[-MAX_OUTPUT_BYTES:].strip()
+        stderr = (res.stderr or "")[-MAX_OUTPUT_BYTES:].strip()
         output_snippet = (stderr or stdout)[-300:] if (stderr or stdout) else "No output"
 
         # Check for Docker daemon/runtime failures (125: docker daemon/image error, 126: cannot invoke, 127: not found, 137: OOM/killed)
@@ -175,15 +196,59 @@ def run_sandbox_repro(
                     },
                 )
 
-            # 4. Compare actual exception against claimed exception
-            claimed_text = f"{claim.actual or ''} {claim.expected or ''} {claim.quote or ''}"
-            claimed_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", claimed_text)
-            actual_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", stderr)
+            # 4. Missing input file / file not found in sandbox environment
+            if "FileNotFoundError" in stderr:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Missing input file in sandbox environment: {output_snippet}",
+                    details={
+                        "reason": "missing_input_file",
+                        "exit_code": res.returncode,
+                        "stderr": stderr,
+                    },
+                )
 
-            claimed_exc = claimed_exc_matches[0] if claimed_exc_matches else None
+            # 5. Extract actual exception from stderr
+            actual_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", stderr)
             actual_exc = actual_exc_matches[-1] if actual_exc_matches else None
 
-            if claimed_exc and actual_exc and claimed_exc != actual_exc:
+            # Plain exit code without unhandled exception (e.g. sys.exit(1)) is inconclusive
+            if not actual_exc:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Script exited with status {res.returncode} but did not raise an unhandled Python exception: {output_snippet}",
+                    details={"reason": "no_exception_raised", "exit_code": res.returncode, "stderr": stderr},
+                )
+
+            # 6. Extract claimed exception from claim fields
+            claimed_text = f"{claim.actual or ''} {claim.expected or ''} {claim.quote or ''}"
+            claimed_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", claimed_text)
+            has_assert = bool(re.search(r"\bassert\b", claim.repro))
+            if has_assert and not claimed_exc_matches:
+                claimed_exc = "AssertionError"
+            else:
+                claimed_exc = claimed_exc_matches[0] if claimed_exc_matches else None
+
+            # If claim names no error and has no assert, an unexpected error does not confirm the claim
+            if not claimed_exc:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Script failed with {actual_exc}, but no specific error was claimed in the report: {output_snippet}",
+                    details={
+                        "reason": "no_claimed_error",
+                        "actual_exception": actual_exc,
+                        "exit_code": res.returncode,
+                    },
+                )
+
+            # If claimed error does not match the actual error
+            if claimed_exc != actual_exc:
                 return CheckResult(
                     claim_id=claim.id,
                     checker="sandbox",
@@ -197,14 +262,15 @@ def run_sandbox_repro(
                     },
                 )
 
-            # 5. Verified failure reproduction
+            # 7. Verified failure reproduction (claimed error matched actual error)
             return CheckResult(
                 claim_id=claim.id,
                 checker="sandbox",
                 outcome="supports",
-                evidence=f"Reproduced failure (exit code {res.returncode}): {output_snippet}",
+                evidence=f"Reproduced failure ({actual_exc}): {output_snippet}",
                 details={
                     "exit_code": res.returncode,
+                    "exception": actual_exc,
                     "stdout": stdout,
                     "stderr": stderr,
                 },
@@ -219,6 +285,20 @@ def run_sandbox_repro(
                     re.I,
                 )
             )
+
+            # If snippet was an expected behavior demonstration, clean execution is expected
+            is_expected_demo = bool(
+                re.search(r"\b(?:expected|should work|works|passes)\b", claim.quote or "", re.I)
+                and not re.search(r"\b(?:actual|repro|bug|crash|fail)\b", claim.quote or "", re.I)
+            )
+            if is_expected_demo:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence="Snippet ran cleanly with exit code 0, matching expected behavior demonstration (not a bug reproduction).",
+                    details={"exit_code": 0, "stdout": stdout, "reason": "expected_behavior_snippet"},
+                )
 
             if has_assert or claims_crash:
                 return CheckResult(
@@ -259,3 +339,6 @@ def run_sandbox_repro(
             evidence=f"Sandbox execution error: {str(e)}",
             details={"error": str(e)},
         )
+    finally:
+        if clean_repo_dir is not None:
+            clean_repo_dir.cleanup()

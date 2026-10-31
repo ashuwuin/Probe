@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
@@ -166,7 +167,38 @@ diff --git a/tests/test_app.py b/tests/test_app.py
     assert any(v.status == "confirmed" for v in verdicts)
 
 
-def test_render_markdown_report_formatting():
+def test_render_markdown_report_builtin_layout():
+    from probe.cli import _render_builtin_markdown_report
+    claims_resp, results, verdicts, status, summary = run_triage_pipeline(
+        text="Fixes #42",
+        repo_root=Path("."),
+        is_pull_request=True,
+        use_llm=False,
+    )
+    md = _render_builtin_markdown_report(
+        claims_resp,
+        results,
+        verdicts,
+        overall=status,
+        overall_summary=summary,
+        repo="ashuwuin/Probe",
+        issue_number=42,
+    )
+    assert REPORT_MARKER in md
+    assert "## ![Verdict]" in md
+    assert "Probe Triage Report: ashuwuin/Probe#42" in md
+    assert "Claim Breakdown" in md
+    assert "<details>" in md
+    assert "Maintainers make the final triage call" in md
+
+
+def test_render_markdown_report_delegates_to_kaashvi_report(monkeypatch):
+    import types
+    mock_gen = MagicMock(return_value=f"{REPORT_MARKER}\n### Kaashvi Report")
+    fake_mod = types.ModuleType("probe.report")
+    fake_mod.generate_markdown_report = mock_gen
+    monkeypatch.setitem(sys.modules, "probe.report", fake_mod)
+
     claims_resp, results, verdicts, status, summary = run_triage_pipeline(
         text="Fixes #42",
         repo_root=Path("."),
@@ -179,11 +211,22 @@ def test_render_markdown_report_formatting():
         verdicts,
         overall=status,
         overall_summary=summary,
+        repo="owner/repo",
+        issue_number=99,
     )
-    assert REPORT_MARKER in md
-    assert "Probe" in md
-    assert "c1" in md
-    assert "Fixes #42" in md
+    assert "Kaashvi Report" in md
+    assert mock_gen.called
+    kwargs = mock_gen.call_args.kwargs
+    assert kwargs["repo"] == "owner/repo"
+    assert kwargs["issue_number"] == 99
+    assert kwargs["overall"] == status
+
+
+def test_regex_extract_no_tests_negation():
+    # "This PR has no tests" must NEVER create a claim that PR adds tests
+    for text in ["This PR has no tests", "PR submitted without tests", "lacks test coverage"]:
+        claims = extract_claims_regex(text, is_pull_request=True).claims
+        assert not any(c.type == "pr_adds_tests" for c in claims)
 
 
 def test_find_editable_bot_comment_finds_probe_bot():
@@ -200,6 +243,17 @@ def test_find_editable_bot_comment_ignores_user_spoof():
     # User tried to inject REPORT_MARKER into their comment -> must be ignored!
     comments = [
         {"id": 1, "body": f"Sneaky comment {REPORT_MARKER}", "user": {"login": "attacker", "type": "User"}},
+    ]
+    target = find_editable_bot_comment(comments)
+    assert target is None
+
+
+def test_find_editable_bot_comment_ignores_other_bots():
+    # Other bots (e.g. dependabot, codecov) must NOT be matched or overwritten
+    comments = [
+        {"id": 1, "body": f"Dependabot update {REPORT_MARKER}", "user": {"login": "dependabot[bot]", "type": "Bot"}},
+        {"id": 2, "body": f"Codecov coverage {REPORT_MARKER}", "user": {"login": "codecov[bot]", "type": "Bot"}},
+        {"id": 3, "body": f"Actions log {REPORT_MARKER}", "user": {"login": "github-actions[bot]", "type": "Bot"}},
     ]
     target = find_editable_bot_comment(comments)
     assert target is None
