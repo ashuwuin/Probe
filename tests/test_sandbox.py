@@ -257,7 +257,7 @@ def test_sandbox_sanitizes_repo_excluding_secrets(tmp_path):
     (repo_dir / ".env").write_text("GITHUB_TOKEN=secret_token_123\n")
     (repo_dir / ".netrc").write_text("machine github.com password secret\n")
     (repo_dir / ".npmrc").write_text("//registry.npmjs.org/:_authToken=secret\n")
-    (repo_dir / "id_rsa").write_text("-----BEGIN RSA PRIVATE KEY-----\n")
+    (repo_dir / "id_rsa").write_text("dummy_key_material\n")
     (repo_dir / "secret.key").write_text("private_key\n")
     (repo_dir / "app.py").write_text("def hello(): pass\n")
     (repo_dir / "tokenizer.py").write_text("def tokenize(): pass\n")
