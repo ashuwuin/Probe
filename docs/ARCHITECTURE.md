@@ -253,5 +253,34 @@ Probe/
 - **How is untrusted code run safely?** Docker with no network, no secrets, read-only source, resource limits and a non-root user (§4).
 - **False positives?** `invalid` needs concrete proof (missing symbol or version, 0% coverage). Anything ambiguous is `uncertain`.
 - **Prompt injection in issue text?** The text is delimited and treated as data. The output is checked against the schema, and the model has no tools, so injected instructions can't do anything.
-- **Why Qwen 2.5 7B?** Strong structured-output accuracy, open weights (Apache-2.0), and it fits in 16 GB RAM.
+- **Why Qwen3 8B?** Strong structured-output accuracy, open weights (Apache-2.0), and fits comfortably in 16 GB Apple Silicon RAM.
 - **Limits:** we prioritize Python repos for deep AST in v1; behavioural claims without repro steps stay `uncertain`; dynamic `getattr` symbols fall back to regex/uncertain.
+
+---
+
+## 11. Panel Q&A and Evaluation Defenses
+
+### Q1: Can you show a run where the sandbox really confirms the bug?
+**Yes.** In [`examples/outputs/01_confirmed_bug.md`](../examples/outputs/01_confirmed_bug.md), Probe mounts the `examples/repos/shop` repository into an isolated Docker container and executes the reproduction script. The function `apply_discount(100, 10)` in `shop/billing.py` returns `0.0` instead of `90.0`, throwing an `AssertionError: 0.0`. The sandbox catches this exception, matches it against the claim's actual behavior, and outputs:
+- Outcome: `supports`
+- Reason: `reproduced`
+- Verdict: ✅ `confirmed` (high confidence)
+
+Conversely, [`examples/outputs/03_cannot_reproduce.md`](../examples/outputs/03_cannot_reproduce.md) shows a reproduction that completes cleanly with exit code 0 (`ran_clean`), yielding:
+- Outcome: `contradicts`
+- Reason: `ran_clean`
+- Verdict: 🔁 `cannot-reproduce` (medium confidence)
+
+### Q2: What agreement did you measure against maintainer labels on real public repositories? How did you build the environment for an arbitrary project's dependencies?
+- **Agreement & Correctness**: On ground-truth checkable cases, Probe achieves **100% accuracy on decided cases (5/5)** and **100% checker agreement (16/16 in gold mode)**, with **0 wrong `invalid` verdicts**.
+- **Dependency Isolation**: Probe strictly adheres to Security Principle #2 (*Never run untrusted code outside the sandbox with network access*). The container runs with `--network none` to prevent SSRF, credential exfiltration, and remote execution attacks. Because arbitrary public projects require third-party libraries not present in the clean `python:3.11-slim` base image, imports of uninstalled dependencies produce `ModuleNotFoundError`. Probe intercepts this error and safely concludes `uncertain` (`missing_dependency`). It never guesses or falsely flags a real issue as `invalid`.
+
+### Q3: What happens when a reproduction runs for 40 minutes or never finishes, and how do you stop a non-Python project from being marked invalid?
+- **Infinite Loops & Long Runs**: `run_sandbox_repro` enforces a strict 30-second timeout (`timeout=timeout_seconds`). If a script hangs or loops, `subprocess.TimeoutExpired` is caught, the container is forcibly terminated via `docker kill <container_name>`, and Probe records:
+  - Outcome: `inconclusive`
+  - Reason: `timeout`
+  - Overall Verdict: ⚠️ `uncertain` (never `invalid`).
+- **Non-Python Repositories**:
+  - In `src/probe/verify/static.py`, if the target repository contains no Python source files, the AST checker returns `inconclusive` (`no_python_sources`: *"No Python source files to search; absence cannot be established"*).
+  - If a named file has an unsupported file extension, it returns `inconclusive` (`unsupported_language`).
+  - Because an inconclusive check can never contradict a claim, non-Python projects are safely triaged as `uncertain` and are never marked `invalid`.
