@@ -41,8 +41,8 @@
       {
         "claim_id": "c1",
         "status": "uncertain",
-        "confidence": "low",
-        "evidence": "Not enough evidence to decide. `write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`write` is defined in `loguru/_file_sink.py` at line 201 (method).), but claim requires reproduction steps to confirm behavior",
         "quote": "write() checks the rotation condition and then calls self._file.write(message) without a lock."
       }
     ]
@@ -91,8 +91,8 @@
       {
         "claim_id": "c1",
         "status": "uncertain",
-        "confidence": "low",
-        "evidence": "Not enough evidence to decide. `_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).), but claim requires reproduction steps to confirm behavior",
         "quote": "This is a race condition in `_terminate_file()` that was previously reported in #519 and #220 but was never fully fixed."
       }
     ]
@@ -124,7 +124,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "when I `poetry build` it, and try to install wheel package, it won't install any dependencies"
       }
     ]
@@ -156,7 +156,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "`poetry install` incorrectly resolve python files in current folder"
       }
     ]
@@ -186,17 +186,11 @@
           "claim_id": "c1",
           "checker": "static_ast",
           "outcome": "inconclusive",
-          "evidence": "`poetry.core.vcs.git.ParsedUrl.parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56?",
-          "line_number": 56,
+          "evidence": "`poetry.core.vcs.git.ParsedUrl.parse` is not defined here; `poetry_core` is a declared dependency, so the symbol probably lives in that dependency.",
+          "line_number": null,
           "details": {
-            "file": "src/poetry/console/io/inputs/run_argv_input.py",
-            "reason": "close_match",
-            "suggestions": [
-              "RunArgvInput._parse (src/poetry/console/io/inputs/run_argv_input.py:56)"
-            ],
-            "files_scanned": 343,
-            "parse_errors": [],
-            "truncated": false
+            "reason": "external_module",
+            "files_scanned": 343
           }
         }
       ]
@@ -206,7 +200,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. `poetry.core.vcs.git.ParsedUrl.parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56?",
+        "evidence": "`poetry.core.vcs.git.ParsedUrl.parse` is not defined here; `poetry_core` is a declared dependency, so the symbol probably lives in that dependency.",
         "quote": "The problem seems to be in `poetry.core.vcs.git.ParsedUrl.parse`"
       }
     ]
@@ -238,7 +232,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "Look P is same in our cases but provided as source code and `poetry` solve as different version."
       }
     ]
@@ -287,8 +281,8 @@
       {
         "claim_id": "c1",
         "status": "uncertain",
-        "confidence": "low",
-        "evidence": "Not enough evidence to decide. `test_env_no_pip` is defined in `tests/utils/test_env.py` at line 1314 (function).",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`test_env_no_pip` is defined in `tests/utils/test_env.py` at line 1314 (function).), but claim requires reproduction steps to confirm behavior",
         "quote": "test_env_no_pip[flags6-packages6]"
       }
     ]
@@ -318,7 +312,7 @@
           "claim_id": "c1",
           "checker": "static_ast",
           "outcome": "inconclusive",
-          "evidence": "The claimed file is inside an installed dependency (site-packages), not this repository; its absence here says nothing about the claim.",
+          "evidence": "The claimed file is inside an installed package (site-packages) that this repository does not contain; its absence here says nothing about the claim.",
           "line_number": null,
           "details": {
             "reason": "external_file"
@@ -331,7 +325,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. The claimed file is inside an installed dependency (site-packages), not this repository; its absence here says nothing about the claim.",
+        "evidence": "The claimed file is inside an installed package (site-packages) that this repository does not contain; its absence here says nothing about the claim.",
         "quote": "calling a script via `poetry run` always fails with a KeyError"
       }
     ]
@@ -363,7 +357,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. No supported check applies to this claim.",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "Escape codes for links aren't always suppressed when not supported"
       }
     ]
@@ -412,8 +406,8 @@
       {
         "claim_id": "c1",
         "status": "uncertain",
-        "confidence": "low",
-        "evidence": "Not enough evidence to decide. `rich.print` is defined in `rich/__init__.py` at line 53 (function).",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`rich.print` is defined in `rich/__init__.py` at line 53 (function).), but claim requires reproduction steps to confirm behavior",
         "quote": "`rich.print` inspects `__rich__`"
       }
     ]
@@ -474,7 +468,7 @@
           "claim_id": "c2",
           "checker": "static_ast",
           "outcome": "inconclusive",
-          "evidence": "`Text.from_markup` is not defined here, and `Text` is not a module or definition in this repository, so it probably belongs to a dependency.",
+          "evidence": "`Text.from_markup` is not defined here; `Text` is imported from outside this repository, so the symbol probably lives in that dependency.",
           "line_number": null,
           "details": {
             "reason": "external_module",
@@ -495,7 +489,7 @@
         "claim_id": "c2",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Not enough evidence to decide. `Text.from_markup` is not defined here, and `Text` is not a module or definition in this repository, so it probably belongs to a dependency.",
+        "evidence": "`Text.from_markup` is not defined here; `Text` is imported from outside this repository, so the symbol probably lives in that dependency.",
         "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
       }
     ]
@@ -575,15 +569,15 @@
       {
         "claim_id": "c1",
         "status": "uncertain",
-        "confidence": "low",
-        "evidence": "Not enough evidence to decide. `NodeList._append` is defined in `src/textual/_node_list.py` at line 70 (method).",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`NodeList._append` is defined in `src/textual/_node_list.py` at line 70 (method).), but claim requires reproduction steps to confirm behavior",
         "quote": "Quick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here."
       },
       {
         "claim_id": "c2",
         "status": "uncertain",
-        "confidence": "low",
-        "evidence": "Not enough evidence to decide. `NodeList._insert` is defined in `src/textual/_node_list.py` at line 85 (method).",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`NodeList._insert` is defined in `src/textual/_node_list.py` at line 85 (method).), but claim requires reproduction steps to confirm behavior",
         "quote": "Quick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here."
       }
     ]

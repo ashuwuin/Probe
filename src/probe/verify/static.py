@@ -20,9 +20,11 @@ Outcome policy (the verdict layer turns outcomes into verdicts):
 from __future__ import annotations
 
 import ast
+import configparser
 import difflib
 import os
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -304,6 +306,92 @@ def regex_definition_line(path: Path, language: str, name: str) -> int | None:
     return None
 
 
+def _norm_dist(name: str) -> str:
+    """PEP 503-style normalisation: 'Poetry-Core' / 'poetry.core' -> 'poetry_core'."""
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+_REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _requirement_names(lines) -> set[str]:
+    names = set()
+    for line in lines:
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue  # comments, -r/-e/--index-url options
+        match = _REQ_NAME_RE.match(line)
+        if match:
+            names.add(_norm_dist(match.group(1)))
+    return names
+
+
+def declared_dependencies(root: Path) -> set[str]:
+    """Normalised dependency names from pyproject.toml, requirements*.txt, setup.cfg, setup.py."""
+    deps: set[str] = set()
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file():
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8", errors="replace"))
+        except (tomllib.TOMLDecodeError, ValueError):
+            data = {}
+        project = data.get("project", {}) or {}
+        deps |= _requirement_names(project.get("dependencies", []) or [])
+        for group in (project.get("optional-dependencies", {}) or {}).values():
+            deps |= _requirement_names(group or [])
+        deps |= _requirement_names((data.get("build-system", {}) or {}).get("requires", []) or [])
+        poetry = (data.get("tool", {}) or {}).get("poetry", {}) or {}
+        deps |= {_norm_dist(k) for k in (poetry.get("dependencies", {}) or {}) if k != "python"}
+        deps |= {_norm_dist(k) for k in (poetry.get("dev-dependencies", {}) or {})}
+        for group in (poetry.get("group", {}) or {}).values():
+            deps |= {_norm_dist(k) for k in ((group or {}).get("dependencies", {}) or {})}
+    for req in sorted(root.glob("requirements*.txt")) + sorted(root.glob("requirements/*.txt")):
+        try:
+            deps |= _requirement_names(req.read_text(encoding="utf-8", errors="replace").splitlines())
+        except OSError:
+            pass
+    setup_cfg = root / "setup.cfg"
+    if setup_cfg.is_file():
+        parser = configparser.ConfigParser()
+        try:
+            parser.read_string(setup_cfg.read_text(encoding="utf-8", errors="replace"))
+            deps |= _requirement_names(parser.get("options", "install_requires", fallback="").splitlines())
+        except configparser.Error:
+            pass
+    setup_py = root / "setup.py"
+    if setup_py.is_file():
+        text = setup_py.read_text(encoding="utf-8", errors="replace")
+        block = re.search(r"install_requires\s*=\s*\[(.*?)\]", text, re.S)
+        if block:
+            deps |= _requirement_names(re.findall(r"[\"']([^\"']+)[\"']", block.group(1)))
+    return deps
+
+
+def external_imports(path: Path, repo_modules: set[str]) -> set[str]:
+    """Names bound by absolute imports of modules that are not part of this repository.
+
+    ``import rich`` -> {"rich"}; ``from rich.text import Text`` -> {"Text", "rich"};
+    ``import numpy as np`` -> {"np", "numpy"}. Relative imports and imports of the
+    repo's own packages are ignored. Raises SyntaxError/ValueError like ast.parse.
+    """
+    tree = ast.parse(path.read_bytes())
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top not in repo_modules:
+                    names.add(top)
+                    if alias.asname:
+                        names.add(alias.asname)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top = node.module.split(".")[0]
+            if top not in repo_modules:
+                names.add(top)
+                names.update(alias.asname or alias.name for alias in node.names if alias.name != "*")
+    return names
+
+
 # --------------------------------------------------------------------------
 # The checker
 # --------------------------------------------------------------------------
@@ -508,18 +596,32 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
     known = sorted({d.name for p in py_files for d in defs_for(p)})
 
     if len(parts) > 1:
-        # "poetry.core.vcs.git.ParsedUrl.parse" or "Text.from_markup": if the leading
-        # name is neither a module/package in this repo nor a definition here, the
-        # symbol most likely lives in a dependency, so absence proves nothing.
-        module_names = set()
+        # "Text.from_markup" or "poetry.core.vcs.git.ParsedUrl.parse": absence here
+        # proves nothing when the leading name comes from a dependency. Require
+        # evidence of that: the name is imported from a non-repo module somewhere,
+        # or a dotted prefix matches a declared dependency (poetry.core ~ poetry-core).
+        # A made-up "PaymentGateway.charge" has neither and falls through.
+        repo_modules: set[str] = set()
         for path in py_files:
-            rel_parts = PurePosixPath(_rel(root, path)).with_suffix("").parts
-            module_names.update(rel_parts)
-        if parts[0] not in module_names and parts[0] not in known:
+            repo_modules.update(PurePosixPath(_rel(root, path)).with_suffix("").parts)
+        repo_modules.discard("src")
+        imported: set[str] = set()
+        for path in py_files:
+            try:
+                imported |= external_imports(path, repo_modules)
+            except (SyntaxError, ValueError, RecursionError, MemoryError, OSError):
+                continue  # already recorded in parse_errors by defs_for
+        deps = declared_dependencies(root)
+        prefixes = {_norm_dist("_".join(parts[:k])) for k in range(1, len(parts))}
+        via = (
+            f"`{parts[0]}` is imported from outside this repository"
+            if parts[0] in imported
+            else next((f"`{d}` is a declared dependency" for d in sorted(prefixes & deps)), None)
+        )
+        if via:
             return _result(
                 claim, "inconclusive",
-                f"`{pretty}` is not defined here, and `{parts[0]}` is not a module or definition in this "
-                "repository, so it probably belongs to a dependency.",
+                f"`{pretty}` is not defined here; {via}, so the symbol probably lives in that dependency.",
                 reason="external_module",
                 files_scanned=len(all_files),
             )

@@ -371,11 +371,64 @@ def test_file_inside_installed_dependency_is_inconclusive(repo, path):
     assert result.details["reason"] == "external_file"
 
 
-@pytest.mark.parametrize("symbol", ["poetry.core.vcs.git.ParsedUrl.parse", "Text.from_markup", "requests.get"])
-def test_dotted_symbol_from_dependency_is_inconclusive(repo, symbol):
+def test_made_up_dotted_name_without_dependency_evidence_contradicts(repo):
+    """PaymentGateway is not defined, imported or declared anywhere: absence is real evidence."""
+    result = check_static_symbol(repo, claim("PaymentGateway.charge"))
+    assert result.outcome == "contradicts"
+    assert result.details["reason"] == "symbol_not_found"
+
+
+@pytest.mark.parametrize(
+    ("import_line", "symbol"),
+    [
+        ("import rich\n", "rich.Text.from_markup"),
+        ("from rich.text import Text\n", "Text.from_markup"),
+        ("import numpy as np\n", "np.frombuffer"),
+        ("from requests import Session\n", "requests.get"),
+    ],
+)
+def test_dotted_symbol_imported_from_dependency_is_inconclusive(repo, import_line, symbol):
+    (repo / "src" / "payments" / "render.py").write_text(import_line)
     result = check_static_symbol(repo, claim(symbol))
     assert result.outcome == "inconclusive"
     assert result.details["reason"] == "external_module"
+    assert "imported from outside" in result.evidence
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("pyproject.toml", '[project]\nname = "poetry"\ndependencies = ["poetry-core (>=1.0)", "cleo>=2"]\n'),
+        ("pyproject.toml", '[tool.poetry.dependencies]\npython = "^3.8"\n"poetry-core" = "1.4.0"\n'),
+        ("requirements.txt", "# pinned\ncleo==2.0\nPoetry_Core>=1.0  # core\n-r other.txt\n"),
+        ("setup.cfg", "[options]\ninstall_requires =\n    cleo\n    poetry-core>=1.0\n"),
+        ("setup.py", 'from setuptools import setup\nsetup(install_requires=["cleo", "poetry.core>=1"])\n'),
+    ],
+)
+def test_dotted_prefix_matching_declared_dependency_is_inconclusive(repo, filename, content):
+    (repo / filename).write_text(content)
+    result = check_static_symbol(repo, claim("poetry.core.vcs.git.ParsedUrl.parse"))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_module"
+    assert "poetry_core" in result.evidence
+
+
+def test_import_of_repo_own_package_is_not_external(repo):
+    (repo / "src" / "app.py").write_text("from payments import billing\nimport payments\n")
+    result = check_static_symbol(repo, claim("billing.refund_everything"))
+    assert result.outcome == "contradicts"
+
+
+def test_relative_imports_are_not_external(repo):
+    (repo / "src" / "payments" / "api.py").write_text("from .gateway import Gateway\n")
+    result = check_static_symbol(repo, claim("Gateway.charge"))
+    assert result.outcome == "contradicts"
+
+
+def test_malformed_dependency_files_do_not_crash(repo):
+    (repo / "pyproject.toml").write_text("this is [not toml")
+    (repo / "setup.cfg").write_text("[options\nbroken")
+    assert check_static_symbol(repo, claim("PaymentGateway.charge")).outcome == "contradicts"
 
 
 def test_dotted_symbol_with_local_module_prefix_can_still_contradict(repo):

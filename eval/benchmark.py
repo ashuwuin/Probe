@@ -32,11 +32,12 @@ HERE = Path(__file__).resolve().parent
 
 
 def _extract(case_text: str, *, is_pull_request: bool):
+    """Return the whole ClaimsResponse: its ``method`` (llm / regex_fallback) feeds the verdict rules."""
     try:
         from probe.extract import extract_claims  # type: ignore[attr-defined]
     except ImportError as exc:
         raise SystemExit(f"--mode extracted needs probe.extract.extract_claims ({exc})") from exc
-    return extract_claims(case_text, is_pull_request=is_pull_request).claims
+    return extract_claims(case_text, is_pull_request=is_pull_request)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,12 +75,13 @@ def main(argv: list[str] | None = None) -> int:
                 except (GitHubError, ValueError) as exc:
                     root, error = None, f"{exc.__class__.__name__}: {exc}"
 
-            claims = None
+            claims, method = None, "gold"
             if args.mode == "extracted" and root is not None:
                 issue = gh.get_issue(owner, repo, number)
-                claims = _extract(f"{issue.title}\n\n{issue.body}", is_pull_request=is_pr)
+                response = _extract(f"{issue.title}\n\n{issue.body}", is_pull_request=is_pr)
+                claims, method = response.claims, response.method
 
-            result = evaluate_case(case, root, claims=claims, decide=decide, error=error)
+            result = evaluate_case(case, root, claims=claims, decide=decide, error=error, extraction_method=method)
             results.append(result)
             print(f"{case.id:16} label={case.label:17} probe={result.prediction:17} {'ERROR ' + error if error else ''}")
 

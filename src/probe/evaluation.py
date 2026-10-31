@@ -100,8 +100,19 @@ def _verdict(claim: Claim, status: str, confidence: str, evidence: str) -> Verdi
     return VerdictResult(claim_id=claim.id, status=status, confidence=confidence, evidence=evidence, quote=claim.quote)
 
 
-def baseline_claim_verdict(claim: Claim, results: list[CheckResult]) -> VerdictResult:
-    """Conservative rules: decide only on concrete evidence, otherwise 'uncertain'."""
+def baseline_claim_verdict(claim: Claim, results: list[CheckResult], *, extraction_method: str = "llm") -> VerdictResult:
+    """Conservative rules: decide only on concrete evidence, otherwise 'uncertain'.
+
+    Claims from the regex fallback are never marked ``invalid`` (same guard as probe.verdict).
+    """
+    verdict = _baseline_claim_verdict(claim, results)
+    if verdict.status == "invalid" and extraction_method == "regex_fallback":
+        return _verdict(claim, "uncertain", "low",
+                        f"Low-confidence (regex fallback) extraction; not marking invalid. {verdict.evidence}")
+    return verdict
+
+
+def _baseline_claim_verdict(claim: Claim, results: list[CheckResult]) -> VerdictResult:
     by_checker = {r.checker: r for r in results}
     static = by_checker.get("static_ast")
     diff = by_checker.get("pr_diff")
@@ -157,10 +168,7 @@ def _load_overall_fn() -> tuple[Callable[[list[Claim], list[VerdictResult]], str
         return baseline_issue_prediction, "baseline overall rule"
 
     def overall(claims: list[Claim], verdicts: list[VerdictResult]) -> str:
-        try:
-            status, _summary = fn(verdicts, claims)  # claims are needed for the core-claim rule
-        except TypeError:
-            status, _summary = fn(verdicts)
+        status, _summary = fn(verdicts, claims)  # claims are needed for the core-claim rule
         return status
 
     return overall, "probe.verdict.get_overall_verdict"
@@ -214,6 +222,7 @@ class CaseResult:
     verdicts: list[VerdictResult]
     prediction: str
     error: str | None = None
+    used_gold_claims: bool = True
 
     @property
     def correct(self) -> bool:
@@ -229,17 +238,23 @@ def evaluate_case(
     repo_root: Path | None,
     *,
     claims: list[Claim] | None = None,
-    decide: Callable[[Claim, list[CheckResult]], VerdictResult] | None = None,
+    decide: Callable[..., VerdictResult] | None = None,
     error: str | None = None,
+    extraction_method: str = "gold",
 ) -> CaseResult:
+    """Run one case. ``extraction_method`` is passed to the verdict rules
+    ("gold" for hand-written claims, else the ClaimsResponse.method, e.g.
+    "regex_fallback", which the rules never turn into ``invalid``)."""
     decide = decide or _load_claim_verdict_fn()[0]
+    used_gold = claims is None
     claims = case.gold_claims if claims is None else claims
     if repo_root is None:
         verdicts = [_verdict(c, "uncertain", "low", f"Repository snapshot unavailable: {error}") for c in claims]
-        return CaseResult(case, claims, {}, verdicts, "uncertain", error=error)
+        return CaseResult(case, claims, {}, verdicts, "uncertain", error=error, used_gold_claims=used_gold)
     checks = {c.id: run_checks(c, repo_root, case.changed_files, case.diff) for c in claims}
-    verdicts = [decide(c, checks[c.id]) for c in claims]
-    return CaseResult(case, claims, checks, verdicts, issue_prediction(claims, verdicts), error=error)
+    verdicts = [decide(c, checks[c.id], extraction_method=extraction_method) for c in claims]
+    return CaseResult(case, claims, checks, verdicts, issue_prediction(claims, verdicts), error=error,
+                      used_gold_claims=used_gold)
 
 
 @dataclass
@@ -295,8 +310,8 @@ def compute_metrics(results: list[CaseResult]) -> Metrics:
     agree = total = 0
     mismatches = []
     for r in results:
-        if r.error:
-            continue
+        if r.error or not r.used_gold_claims:
+            continue  # expected_outcomes are keyed by gold claim ids; extracted ids don't correspond
         for claim_id, expected in r.case.expected_outcomes.items():
             for check in r.checks.get(claim_id, []):
                 total += 1
@@ -348,6 +363,10 @@ def _group_rows(results: list[CaseResult]) -> list[str]:
 
 def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, verdict_source: str, generated: str) -> str:
     agree, checks = metrics.check_agreement
+    if any(r.used_gold_claims for r in results):
+        agreement = f"{agree}/{checks}"
+    else:
+        agreement = "n/a (extracted mode)"
     lines = [
         "# Probe evaluation results",
         "",
@@ -367,7 +386,7 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         f"| Coverage | {metrics.decisive}/{metrics.total} ({_pct(metrics.coverage)}) | Cases where Probe gave a decisive verdict instead of `uncertain` |",
         f"| Accuracy (decisive cases only) | {_pct(metrics.accuracy_decisive)} | Correct among the cases Probe decided |",
         f"| Accuracy (all cases) | {_pct(metrics.accuracy_all)} | `uncertain` counts as not correct |",
-        f"| Checker agreement | {agree}/{checks} | Check outcomes that matched the hand-annotated expected outcome |",
+        f"| Checker agreement | {agreement} | Check outcomes that matched the hand-annotated expected outcome (gold claims only) |",
         "",
         "### By group",
         "",

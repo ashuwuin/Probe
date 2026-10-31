@@ -10,6 +10,9 @@ Probe is evaluated on **real, closed GitHub issues** whose maintainers labelled 
 
 - `label`: the maintainer's label, used as the reference answer. Labels are
   signals, not infallible ground truth.
+  Note that a maintainer's `invalid` often means "not a bug / won't fix", while
+  Probe's `invalid` means "this specific technical claim is factually false", so
+  the two do not always measure the same thing.
 - `sha`: the default-branch commit at the moment the issue was opened, so Probe
   checks the code the reporter actually saw rather than today's code.
 - `gold_claims`: hand-written claims. Each `quote` was verified to appear

@@ -319,3 +319,54 @@ def test_safe_extract_enforces_file_count(tmp_path, monkeypatch):
 def test_models_serialise(client):
     pr = client.get_pull("octo", "demo", 8)
     assert json.loads(pr.model_dump_json())["head_sha"] == HEAD
+
+
+
+# ---------------------------------------------------------------- secondary rate limits, streamed downloads
+
+@pytest.mark.parametrize(
+    ("headers", "body"),
+    [
+        ({"retry-after": "60"}, {"message": "slow down"}),
+        ({}, {"message": "You have exceeded a secondary rate limit. Please wait a few minutes."}),
+    ],
+)
+def test_secondary_rate_limit_is_rate_limit_error(client, fake, headers, body):
+    fake.overrides["/repos/octo/demo/issues/7"] = httpx.Response(403, headers=headers, json=body)
+    with pytest.raises(RateLimitError) as exc:
+        client.get_issue("octo", "demo", 7)
+    assert exc.value.retry_after == (60 if headers else None)
+
+
+def test_plain_403_is_not_rate_limit(client, fake):
+    fake.overrides["/repos/octo/demo/issues/7"] = httpx.Response(403, json={"message": "Resource not accessible"})
+    with pytest.raises(GitHubError) as exc:
+        client.get_issue("octo", "demo", 7)
+    assert not isinstance(exc.value, RateLimitError)
+
+
+def test_tarball_over_limit_aborts_and_leaves_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(gc, "MAX_TARBALL_BYTES", 100)
+    big = make_tarball([(f"f{i}.py", "x = '%s'\n" % ("y" * 500)) for i in range(20)])
+    assert len(big) > 100
+    fake = FakeGitHub(tarball=big)
+    with GitHubClient(token="", transport=httpx.MockTransport(fake), cache_dir=tmp_path) as c:
+        with pytest.raises(GitHubError, match="download limit"):
+            c.snapshot("octo", "demo", SHA, resolved_by="test")
+    assert list((tmp_path / "octo" / "demo").iterdir()) == []
+
+
+def test_tarball_download_errors_are_typed(tmp_path):
+    fake = FakeGitHub()
+    fake.overrides[f"/repos/octo/demo/tarball/{SHA}"] = httpx.Response(404, json={})
+    with GitHubClient(token="", transport=httpx.MockTransport(fake), cache_dir=tmp_path) as c:
+        with pytest.raises(NotFoundError):
+            c.snapshot("octo", "demo", SHA, resolved_by="test")
+    assert list((tmp_path / "octo" / "demo").iterdir()) == []
+
+
+def test_safe_extract_accepts_a_path(tmp_path):
+    archive = tmp_path / "a.tar.gz"
+    archive.write_bytes(make_tarball([("m.py", "x = 1\n")]))
+    assert safe_extract_tarball(archive, tmp_path / "out") == 1
+    assert (tmp_path / "out" / "m.py").read_text() == "x = 1\n"

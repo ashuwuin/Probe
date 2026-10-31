@@ -172,7 +172,7 @@ def test_metrics_counts_and_false_invalid(repo):
 
 
 def test_metrics_flags_decisive_verdict_without_evidence(repo):
-    def reckless(c, results):
+    def reckless(c, results, **_):
         return VerdictResult(claim_id=c.id, status="confirmed", confidence="high", evidence="trust me", quote=c.quote)
 
     r = evaluate_case(case("confirmed", [claim()]), repo, decide=reckless)
@@ -295,3 +295,57 @@ def test_group_rows_report_coverage_per_group(repo):
     md = render_markdown([a, b], compute_metrics([a, b]), mode="gold", verdict_source="x", generated="now")
     assert "| checkable | 1 | 1/1 | 1/1 (100%) | 0 |" in md
     assert "| maintainer-labelled issues | 1 | 0/1 | n/a | 0 |" in md
+
+
+
+# ---------------------------------------------------------------- extracted mode / extraction method
+
+def test_checker_agreement_skipped_for_extracted_claims(repo):
+    c = case("invalid", [claim(symbol="calculate_tax")], expected_outcomes={"c1": "contradicts"})
+    extracted = [claim("c1", symbol="refund_everything")]  # same id, different claim
+    r = evaluate_case(c, repo, claims=extracted)
+    assert r.used_gold_claims is False
+    m = compute_metrics([r])
+    assert m.check_agreement == (0, 0) and m.check_mismatches == []
+    md = render_markdown([r], m, mode="extracted", verdict_source="x", generated="now")
+    assert "| Checker agreement | n/a (extracted mode) |" in md
+
+
+def test_gold_mode_marks_used_gold_claims(repo):
+    assert evaluate_case(case(), repo).used_gold_claims is True
+
+
+@pytest.mark.parametrize("decide_name", ["baseline", "active"])
+def test_regex_fallback_claim_is_never_invalid(repo, decide_name):
+    decide = baseline_claim_verdict if decide_name == "baseline" else _load_claim_verdict_fn()[0]
+    c = case("invalid", [claim(symbol="refund_everything")])
+    llm = evaluate_case(c, repo, claims=c.gold_claims, decide=decide, extraction_method="llm")
+    regex = evaluate_case(c, repo, claims=c.gold_claims, decide=decide, extraction_method="regex_fallback")
+    assert llm.checks["c1"][0].outcome == "contradicts"
+    assert llm.verdicts[0].status == "invalid"
+    assert regex.verdicts[0].status == "uncertain"
+    assert regex.prediction == "uncertain"
+
+
+def test_extraction_method_is_passed_to_decide(repo):
+    seen = []
+
+    def spy(c, results, *, extraction_method):
+        seen.append(extraction_method)
+        return baseline_claim_verdict(c, results, extraction_method=extraction_method)
+
+    evaluate_case(case(), repo, decide=spy)
+    evaluate_case(case(), repo, claims=[claim()], decide=spy, extraction_method="regex_fallback")
+    assert seen == ["gold", "regex_fallback"]
+
+
+def test_overall_rule_errors_are_not_hidden(monkeypatch):
+    """A signature mismatch in get_overall_verdict must surface, not silently use another rule."""
+    import probe.evaluation as ev
+
+    fake = type("FakeVerdict", (), {"get_overall_verdict": staticmethod(lambda verdicts: ("confirmed", ""))})
+    monkeypatch.setattr(ev, "_verdict_module", lambda: fake)
+    overall, source = ev._load_overall_fn()
+    assert source == "probe.verdict.get_overall_verdict"
+    with pytest.raises(TypeError):
+        overall([claim()], [_v("c1", "uncertain")])

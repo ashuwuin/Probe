@@ -1,0 +1,1168 @@
+[
+  {
+    "id": "loguru-1448",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "_file_sink.py",
+        "symbol": "write",
+        "version": null,
+        "expected": "write() should handle rotation safely in multi-threaded environments",
+        "actual": "write() can write to the wrong file or crash in multi-threaded use",
+        "repro": null,
+        "issue_number": null,
+        "quote": "FileSink write/rotation race in multi-threaded logging"
+      },
+      {
+        "id": "c2",
+        "type": "symbol_exists",
+        "file": "_file_sink.py",
+        "symbol": "write",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "_file_sink.py — write() checks the rotation condition"
+      },
+      {
+        "id": "c3",
+        "type": "bug_behavior",
+        "file": "_file_sink.py",
+        "symbol": "write",
+        "version": null,
+        "expected": "rotation check and file update should be thread-safe",
+        "actual": "thread A can write to the wrong file or crash",
+        "repro": null,
+        "issue_number": null,
+        "quote": "thread A can pass the rotation check while thread B rotates the file and sets _file to a new object (or None during transition)."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+          "line_number": 201,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink.write",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+          "line_number": 201,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink.write",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+          "line_number": 201,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink.write",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`write` is defined in `loguru/_file_sink.py` at line 201 (method).), but claim requires reproduction steps to confirm behavior",
+        "quote": "FileSink write/rotation race in multi-threaded logging"
+      },
+      {
+        "claim_id": "c2",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`write` is defined in `loguru/_file_sink.py` at line 201 (method).",
+        "quote": "_file_sink.py — write() checks the rotation condition"
+      },
+      {
+        "claim_id": "c3",
+        "status": "uncertain",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`write` is defined in `loguru/_file_sink.py` at line 201 (method).), but claim requires reproduction steps to confirm behavior",
+        "quote": "thread A can pass the rotation check while thread B rotates the file and sets _file to a new object (or None during transition)."
+      }
+    ]
+  },
+  {
+    "id": "loguru-1471",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "loguru/_file_sink.py",
+        "symbol": "_terminate_file",
+        "version": null,
+        "expected": "Log rotation should not crash when log file is deleted externally",
+        "actual": "Log rotation causes FileNotFoundError crash when log file is deleted externally",
+        "repro": null,
+        "issue_number": null,
+        "quote": "FileNotFoundError during rotation when log file is deleted externally"
+      },
+      {
+        "id": "c2",
+        "type": "symbol_exists",
+        "file": "loguru/_file_sink.py",
+        "symbol": "_terminate_file",
+        "version": null,
+        "expected": "FileSink._terminate_file() should handle file deletion during rotation",
+        "actual": "FileSink._terminate_file() crashes when file is deleted externally during rotation",
+        "repro": null,
+        "issue_number": null,
+        "quote": "FileSink._terminate_file()"
+      },
+      {
+        "id": "c3",
+        "type": "bug_behavior",
+        "file": "loguru/_ctime_functions.py",
+        "symbol": "get_ctime_linux",
+        "version": null,
+        "expected": "get_ctime_linux should not crash when file is deleted",
+        "actual": "get_ctime_linux crashes with FileNotFoundError when file is deleted",
+        "repro": null,
+        "issue_number": null,
+        "quote": "FileNotFoundError: [Errno 2] No such file or directory: '.../test.log'"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).",
+          "line_number": 269,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink._terminate_file",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).",
+          "line_number": 269,
+          "details": {
+            "file": "loguru/_file_sink.py",
+            "kind": "method",
+            "qualname": "FileSink._terminate_file",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`get_ctime_linux` is not defined anywhere in the repository. Did you mean `get_ctime` in `loguru/_ctime_functions.py` at line 57? It is not defined in the named file `loguru/_ctime_functions.py`.",
+          "line_number": 57,
+          "details": {
+            "file": "loguru/_ctime_functions.py",
+            "reason": "close_match",
+            "suggestions": [
+              "get_ctime (loguru/_ctime_functions.py:57)"
+            ],
+            "files_scanned": 171,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "medium",
+        "evidence": "Symbol verified (`_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).), but claim requires reproduction steps to confirm behavior",
+        "quote": "FileNotFoundError during rotation when log file is deleted externally"
+      },
+      {
+        "claim_id": "c2",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`_terminate_file` is defined in `loguru/_file_sink.py` at line 269 (method).",
+        "quote": "FileSink._terminate_file()"
+      },
+      {
+        "claim_id": "c3",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`get_ctime_linux` is not defined anywhere in the repository. Did you mean `get_ctime` in `loguru/_ctime_functions.py` at line 57? It is not defined in the named file `loguru/_ctime_functions.py`.",
+        "quote": "FileNotFoundError: [Errno 2] No such file or directory: '.../test.log'"
+      }
+    ]
+  },
+  {
+    "id": "poetry-3610",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "pyproject.toml",
+        "symbol": "description",
+        "version": null,
+        "expected": "Dependencies should install correctly",
+        "actual": "Dependencies are not installed when description contains new lines",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Dependencies won't install if description contains new lines"
+      },
+      {
+        "id": "c2",
+        "type": "bug_behavior",
+        "file": "pyproject.toml",
+        "symbol": "description",
+        "version": null,
+        "expected": "Dependencies should be installed",
+        "actual": "Dependencies are installed when description has no new lines",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Then dependencies are installed as expected."
+      },
+      {
+        "id": "c3",
+        "type": "symbol_exists",
+        "file": "pyproject.toml",
+        "symbol": "description",
+        "version": null,
+        "expected": "Description has no new lines",
+        "actual": "Description is set without new lines",
+        "repro": null,
+        "issue_number": null,
+        "quote": "description = \"Poetry bug repro.\""
+      },
+      {
+        "id": "c4",
+        "type": "security_vuln",
+        "file": ".dist-info/METADATA",
+        "symbol": "Metadata",
+        "version": null,
+        "expected": "Metadata should not include dependency information",
+        "actual": "Metadata includes dependency information after a new line",
+        "repro": null,
+        "issue_number": null,
+        "quote": "After this new line, after `Summary`, everything else is treated as package description, I guess."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+          "line_number": null,
+          "details": {
+            "file": "pyproject.toml",
+            "reason": "unsupported_language"
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+          "line_number": null,
+          "details": {
+            "file": "pyproject.toml",
+            "reason": "unsupported_language"
+          }
+        }
+      ],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+          "line_number": null,
+          "details": {
+            "file": "pyproject.toml",
+            "reason": "unsupported_language"
+          }
+        }
+      ],
+      "c4": [
+        {
+          "claim_id": "c4",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`Metadata` has no static definition, but the name appears in `poetry/publishing/uploader.py` (possibly an import, dynamic definition or extension module).",
+          "line_number": null,
+          "details": {
+            "file": "poetry/publishing/uploader.py",
+            "reason": "mentioned_not_defined",
+            "files_scanned": 263,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+        "quote": "Dependencies won't install if description contains new lines"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+        "quote": "Then dependencies are installed as expected."
+      },
+      {
+        "claim_id": "c3",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+        "quote": "description = \"Poetry bug repro.\""
+      },
+      {
+        "claim_id": "c4",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`Metadata` has no static definition, but the name appears in `poetry/publishing/uploader.py` (possibly an import, dynamic definition or extension module).",
+        "quote": "After this new line, after `Summary`, everything else is treated as package description, I guess."
+      }
+    ]
+  },
+  {
+    "id": "poetry-6627",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "version_affected",
+        "file": null,
+        "symbol": null,
+        "version": "1.2",
+        "expected": "poetry install should work correctly",
+        "actual": "poetry install incorrectly resolves python files in root directory",
+        "repro": null,
+        "issue_number": null,
+        "quote": "This is happened after Poetry 1.2"
+      }
+    ],
+    "checks": {
+      "c1": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "This is happened after Poetry 1.2"
+      }
+    ]
+  },
+  {
+    "id": "poetry-7033",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "poetry.core.vcs.git.ParsedUrl",
+        "symbol": "parse",
+        "version": null,
+        "expected": "URL with escaped characters should be parsed correctly",
+        "actual": "URL fails to parse due to missing % in regex pattern",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Poetry fails to parse the URL when adding git dependencies having escaped characters in the repository path."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56? `poetry.core.vcs.git.ParsedUrl` was not found.",
+          "line_number": 56,
+          "details": {
+            "file": "src/poetry/console/io/inputs/run_argv_input.py",
+            "reason": "close_match",
+            "suggestions": [
+              "RunArgvInput._parse (src/poetry/console/io/inputs/run_argv_input.py:56)"
+            ],
+            "files_scanned": 343,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56? `poetry.core.vcs.git.ParsedUrl` was not found.",
+        "quote": "Poetry fails to parse the URL when adding git dependencies having escaped characters in the repository path."
+      }
+    ]
+  },
+  {
+    "id": "poetry-7268",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "version solving should succeed",
+        "actual": "version solving failed due to conflict in dependencies",
+        "repro": null,
+        "issue_number": null,
+        "quote": "version solving failed"
+      },
+      {
+        "id": "c2",
+        "type": "version_affected",
+        "file": null,
+        "symbol": null,
+        "version": "1.1.15",
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Poetry version: 1.1.15"
+      },
+      {
+        "id": "c3",
+        "type": "symbol_exists",
+        "file": "H",
+        "symbol": "P",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "H (rev 4.5.0) depends on P (tag 4.8.0)"
+      },
+      {
+        "id": "c4",
+        "type": "symbol_exists",
+        "file": "P",
+        "symbol": "P",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "P is same in our cases but provided as source code"
+      },
+      {
+        "id": "c5",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "H should not be forbidden",
+        "actual": "H is forbidden due to dependency conflict",
+        "repro": null,
+        "issue_number": null,
+        "quote": "H is forbidden"
+      }
+    ],
+    "checks": {
+      "c1": [],
+      "c2": [],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`P` has no static definition, but the name appears in `get-poetry.py` (possibly an import, dynamic definition or extension module).",
+          "line_number": null,
+          "details": {
+            "file": "get-poetry.py",
+            "reason": "mentioned_not_defined",
+            "files_scanned": 346,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ],
+      "c4": [
+        {
+          "claim_id": "c4",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`P` has no static definition, but the name appears in `get-poetry.py` (possibly an import, dynamic definition or extension module).",
+          "line_number": null,
+          "details": {
+            "file": "get-poetry.py",
+            "reason": "mentioned_not_defined",
+            "files_scanned": 346,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ],
+      "c5": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "version solving failed"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Poetry version: 1.1.15"
+      },
+      {
+        "claim_id": "c3",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`P` has no static definition, but the name appears in `get-poetry.py` (possibly an import, dynamic definition or extension module).",
+        "quote": "H (rev 4.5.0) depends on P (tag 4.8.0)"
+      },
+      {
+        "claim_id": "c4",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`P` has no static definition, but the name appears in `get-poetry.py` (possibly an import, dynamic definition or extension module).",
+        "quote": "P is same in our cases but provided as source code"
+      },
+      {
+        "claim_id": "c5",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "H is forbidden"
+      }
+    ]
+  },
+  {
+    "id": "poetry-7465",
+    "label": "invalid",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "test cases should pass",
+        "actual": "9 testcases fail",
+        "repro": null,
+        "issue_number": null,
+        "quote": "9 testcases fail"
+      },
+      {
+        "id": "c2",
+        "type": "version_affected",
+        "file": null,
+        "symbol": null,
+        "version": "1.3.2",
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Version: 1.3.2"
+      },
+      {
+        "id": "c3",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "test should complete successfully",
+        "actual": "Error code 1",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Error code 1"
+      }
+    ],
+    "checks": {
+      "c1": [],
+      "c2": [],
+      "c3": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "9 testcases fail"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Version: 1.3.2"
+      },
+      {
+        "claim_id": "c3",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Error code 1"
+      }
+    ]
+  },
+  {
+    "id": "poetry-9961",
+    "label": "confirmed",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "version_affected",
+        "file": null,
+        "symbol": null,
+        "version": "2.0.0",
+        "expected": "poetry run should work with poetry 2.0.0",
+        "actual": "poetry run fails with KeyError: 'format'",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Poetry (version 2.0.0)"
+      },
+      {
+        "id": "c2",
+        "type": "symbol_exists",
+        "file": "pyproject.toml",
+        "symbol": "somepackage",
+        "version": null,
+        "expected": "somepackage should be included in the package list",
+        "actual": "somepackage is included in the package list but causes KeyError",
+        "repro": null,
+        "issue_number": null,
+        "quote": "packages = [{ include = \"somepackage\" }]"
+      },
+      {
+        "id": "c3",
+        "type": "symbol_exists",
+        "file": "pyproject.toml",
+        "symbol": "sometool",
+        "version": null,
+        "expected": "sometool should be a valid script entry point",
+        "actual": "sometool is defined but causes KeyError during execution",
+        "repro": null,
+        "issue_number": null,
+        "quote": "sometool = \"somepackage:main\""
+      }
+    ],
+    "checks": {
+      "c1": [],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+          "line_number": null,
+          "details": {
+            "file": "pyproject.toml",
+            "reason": "unsupported_language"
+          }
+        }
+      ],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+          "line_number": null,
+          "details": {
+            "file": "pyproject.toml",
+            "reason": "unsupported_language"
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Poetry (version 2.0.0)"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+        "quote": "packages = [{ include = \"somepackage\" }]"
+      },
+      {
+        "claim_id": "c3",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
+        "quote": "sometool = \"somepackage:main\""
+      }
+    ]
+  },
+  {
+    "id": "rich-1630",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "Escape codes for links are suppressed when not supported",
+        "actual": "Escape codes for links aren't always suppressed when not supported",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Escape codes for links aren't always suppressed when not supported"
+      },
+      {
+        "id": "c2",
+        "type": "symbol_exists",
+        "file": "Console",
+        "symbol": "Console",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "you can't create an instance of Console that explicitly doesn't use link escape codes"
+      }
+    ],
+    "checks": {
+      "c1": [],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`Console` is defined in `rich/console.py` at line 572 (class). `Console` was not found.",
+          "line_number": 572,
+          "details": {
+            "file": "rich/console.py",
+            "kind": "class",
+            "qualname": "Console",
+            "reason": "symbol_found",
+            "confidence": "medium",
+            "file_mismatch": true,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Escape codes for links aren't always suppressed when not supported"
+      },
+      {
+        "claim_id": "c2",
+        "status": "confirmed",
+        "confidence": "medium",
+        "evidence": "`Console` is defined in `rich/console.py` at line 572 (class). `Console` was not found.",
+        "quote": "you can't create an instance of Console that explicitly doesn't use link escape codes"
+      }
+    ]
+  },
+  {
+    "id": "rich-2988",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": "from chanfig import Config\nfrom rich import print as pprint\n\nif __name__ == '__main__':\n    config = Config(**{'hello': 'world'})\n    print('print', config)\n    pprint('rich.print', config)\n    print(config.__rich__)\n    print(config.keys())",
+        "issue_number": null,
+        "quote": "print does not work well with DefaultDict"
+      },
+      {
+        "id": "c2",
+        "type": "version_affected",
+        "file": null,
+        "symbol": null,
+        "version": "CHANfiG",
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "ref: https://github.com/ZhiyuanChen/CHANfiG/issues/6"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "sandbox",
+          "outcome": "inconclusive",
+          "evidence": "sandbox_unavailable: Docker daemon is not active on host",
+          "line_number": null,
+          "details": {
+            "reason": "sandbox_unavailable"
+          }
+        }
+      ],
+      "c2": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Docker sandbox unavailable to verify execution behavior safely",
+        "quote": "print does not work well with DefaultDict"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "ref: https://github.com/ZhiyuanChen/CHANfiG/issues/6"
+      }
+    ]
+  },
+  {
+    "id": "textual-2178",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "Text can be bolded using markup or CSS",
+        "actual": "Bold text is not working via markup or CSS",
+        "repro": null,
+        "issue_number": null,
+        "quote": "The ability to **bold** text seems to be broken."
+      },
+      {
+        "id": "c2",
+        "type": "symbol_exists",
+        "file": null,
+        "symbol": "Label",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
+      },
+      {
+        "id": "c3",
+        "type": "symbol_exists",
+        "file": null,
+        "symbol": "Label",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "yield Label(\"John McExample\", classes=\"data-fw\")"
+      },
+      {
+        "id": "c4",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "Markup and CSS should render bold text",
+        "actual": "Bold text is not rendered correctly in Textual",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Result inside of Textual"
+      },
+      {
+        "id": "c5",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "Markup should render bold text",
+        "actual": "Bold text is not rendered correctly with Rich",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Using Rich to print markup text"
+      },
+      {
+        "id": "c6",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "Bold text should render correctly in terminal",
+        "actual": "Bold text is not rendered correctly in terminal",
+        "repro": null,
+        "issue_number": null,
+        "quote": "(I use the new Windows Terminal with WSL, the same happens in PowerShell)"
+      }
+    ],
+    "checks": {
+      "c1": [],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`Label` is defined in `src/textual/widgets/_label.py` at line 6 (class).",
+          "line_number": 6,
+          "details": {
+            "file": "src/textual/widgets/_label.py",
+            "kind": "class",
+            "qualname": "Label",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`Label` is defined in `src/textual/widgets/_label.py` at line 6 (class).",
+          "line_number": 6,
+          "details": {
+            "file": "src/textual/widgets/_label.py",
+            "kind": "class",
+            "qualname": "Label",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ],
+      "c4": [],
+      "c5": [],
+      "c6": []
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "The ability to **bold** text seems to be broken."
+      },
+      {
+        "claim_id": "c2",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`Label` is defined in `src/textual/widgets/_label.py` at line 6 (class).",
+        "quote": "yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")"
+      },
+      {
+        "claim_id": "c3",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`Label` is defined in `src/textual/widgets/_label.py` at line 6 (class).",
+        "quote": "yield Label(\"John McExample\", classes=\"data-fw\")"
+      },
+      {
+        "claim_id": "c4",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Result inside of Textual"
+      },
+      {
+        "claim_id": "c5",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Using Rich to print markup text"
+      },
+      {
+        "claim_id": "c6",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "(I use the new Windows Terminal with WSL, the same happens in PowerShell)"
+      }
+    ]
+  },
+  {
+    "id": "textual-2863",
+    "label": "cannot-reproduce",
+    "prediction": "uncertain",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "mounting duplicate widget IDs raises a `DuplicateIds` error",
+        "actual": "mounting duplicate widget IDs results in a `NoScreen` error",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Mounting duplicate widget IDs can result in a `NoScreen` error"
+      },
+      {
+        "id": "c2",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "mounting duplicate widget IDs raises a `NoScreen` error",
+        "actual": "mounting duplicate widget IDs results in a `No` error",
+        "repro": null,
+        "issue_number": null,
+        "quote": "The error I was seeing is follows at the end of here."
+      },
+      {
+        "id": "c3",
+        "type": "symbol_exists",
+        "file": "src/textual/dom.py",
+        "symbol": "screen",
+        "version": null,
+        "expected": "screen should be found in the widget hierarchy",
+        "actual": "screen is not found in the widget hierarchy",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Making a change akin to this:"
+      }
+    ],
+    "checks": {
+      "c1": [],
+      "c2": [],
+      "c3": [
+        {
+          "claim_id": "c3",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`screen` is defined in `src/textual/dom.py` at line 460 (method).",
+          "line_number": 460,
+          "details": {
+            "file": "src/textual/dom.py",
+            "kind": "method",
+            "qualname": "DOMNode.screen",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "Mounting duplicate widget IDs can result in a `NoScreen` error"
+      },
+      {
+        "claim_id": "c2",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "Insufficient evidence to confirm or invalidate claim",
+        "quote": "The error I was seeing is follows at the end of here."
+      },
+      {
+        "claim_id": "c3",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`screen` is defined in `src/textual/dom.py` at line 460 (method).",
+        "quote": "Making a change akin to this:"
+      }
+    ]
+  }
+]

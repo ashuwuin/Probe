@@ -68,9 +68,12 @@ class NotFoundError(GitHubError):
 class RateLimitError(GitHubError):
     """403/429 caused by GitHub rate limits."""
 
-    def __init__(self, message: str, status: int | None = None, reset_at: int | None = None) -> None:
+    def __init__(
+        self, message: str, status: int | None = None, reset_at: int | None = None, *, retry_after: int | None = None
+    ) -> None:
         super().__init__(message, status)
         self.reset_at = reset_at
+        self.retry_after = retry_after
 
 
 class InvalidURLError(ValueError):
@@ -175,7 +178,7 @@ def default_cache_dir() -> Path:
     return Path(base) if base else Path.home() / ".cache" / "probe" / "repos"
 
 
-def safe_extract_tarball(data: bytes, dest: Path) -> int:
+def safe_extract_tarball(data: bytes | Path, dest: Path) -> int:
     """Extract a GitHub tarball into ``dest``, dropping the top-level folder.
 
     Returns the number of regular files written. Raises GitHubError when the
@@ -183,7 +186,8 @@ def safe_extract_tarball(data: bytes, dest: Path) -> int:
     """
     total = 0
     count = 0
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+    source = {"name": str(data)} if isinstance(data, Path) else {"fileobj": io.BytesIO(data)}
+    with tarfile.open(mode="r:gz", **source) as tar:
         members = []
         for member in tar:
             parts = member.name.split("/", 1)
@@ -203,6 +207,29 @@ def safe_extract_tarball(data: bytes, dest: Path) -> int:
         except tarfile.FilterError as exc:
             raise GitHubError(f"Unsafe archive member rejected: {exc}") from exc
     return count
+
+
+def _raise_for_status(response: httpx.Response, path: str) -> None:
+    """Map a non-200 GitHub response to a typed error (always raises)."""
+    status = response.status_code
+    if status == 404:
+        raise NotFoundError(f"Not found: {path}", 404)
+    if status in (403, 429):
+        remaining = response.headers.get("x-ratelimit-remaining")
+        retry_after = response.headers.get("retry-after")
+        try:
+            body = response.text[:2000].lower()
+        except httpx.ResponseNotRead:
+            body = ""
+        if status == 429 or remaining == "0" or retry_after is not None or "secondary rate limit" in body:
+            reset = response.headers.get("x-ratelimit-reset")
+            raise RateLimitError(
+                "GitHub API rate limit exceeded; set GITHUB_TOKEN or wait for the reset",
+                status,
+                int(reset) if reset and reset.isdigit() else None,
+                retry_after=int(retry_after) if retry_after and retry_after.isdigit() else None,
+            )
+    raise GitHubError(f"GitHub returned HTTP {status} for {path}", status)
 
 
 # --------------------------------------------------------------------------
@@ -257,17 +284,8 @@ class GitHubClient:
             raise GitHubError(f"Network error calling GitHub: {exc.__class__.__name__}") from exc
         if response.status_code == 200:
             return response
-        if response.status_code == 404:
-            raise NotFoundError(f"Not found: {path}", 404)
-        remaining = response.headers.get("x-ratelimit-remaining")
-        if response.status_code == 429 or (response.status_code == 403 and remaining == "0"):
-            reset = response.headers.get("x-ratelimit-reset")
-            raise RateLimitError(
-                "GitHub API rate limit exceeded; set GITHUB_TOKEN or wait for the reset",
-                response.status_code,
-                int(reset) if reset and reset.isdigit() else None,
-            )
-        raise GitHubError(f"GitHub returned HTTP {response.status_code} for {path}", response.status_code)
+        _raise_for_status(response, path)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _json(self, path: str, **params) -> dict | list:
         return self._get(path, params=params or None).json()
@@ -367,14 +385,12 @@ class GitHubClient:
         if (dest / ".probe-complete").exists():
             return Snapshot(owner=owner, repo=repo, sha=sha, path=dest, resolved_by=resolved_by, from_cache=True)
 
-        response = self._get(f"/repos/{owner}/{repo}/tarball/{sha}")
-        if len(response.content) > MAX_TARBALL_BYTES:
-            raise GitHubError("Repository tarball exceeds Probe's download limit")
-
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = Path(tempfile.mkdtemp(prefix=f".{sha[:12]}-", dir=dest.parent))
+        archive = Path(f"{tmp}.tar.gz")
         try:
-            safe_extract_tarball(response.content, tmp)
+            self._download(f"/repos/{owner}/{repo}/tarball/{sha}", archive, MAX_TARBALL_BYTES)
+            safe_extract_tarball(archive, tmp)
             (tmp / ".probe-complete").write_text(f"{owner}/{repo}@{sha}\n")
             if dest.exists():  # a previous, incomplete attempt
                 shutil.rmtree(dest)
@@ -382,7 +398,27 @@ class GitHubClient:
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
+        finally:
+            archive.unlink(missing_ok=True)
         return Snapshot(owner=owner, repo=repo, sha=sha, path=dest, resolved_by=resolved_by)
+
+    def _download(self, path: str, target: Path, limit: int) -> int:
+        """Stream ``path`` into ``target``; abort as soon as more than ``limit`` bytes arrive."""
+        total = 0
+        try:
+            with self._http.stream("GET", path) as response:
+                if response.status_code != 200:
+                    response.read()
+                    _raise_for_status(response, path)
+                with target.open("wb") as fh:
+                    for chunk in response.iter_bytes(chunk_size=1 << 16):
+                        total += len(chunk)
+                        if total > limit:
+                            raise GitHubError("Repository tarball exceeds Probe's download limit")
+                        fh.write(chunk)
+        except httpx.HTTPError as exc:
+            raise GitHubError(f"Network error calling GitHub: {exc.__class__.__name__}") from exc
+        return total
 
     def snapshot_for_issue(self, issue: IssueData) -> Snapshot:
         """The default branch as it was when the issue was opened."""
