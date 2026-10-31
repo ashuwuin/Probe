@@ -9,6 +9,8 @@ from probe.cli import (
     run_triage_pipeline,
     render_terminal_report,
     render_markdown_report,
+    find_editable_bot_comment,
+    REPORT_MARKER,
 )
 from probe.models import Claim, ClaimsResponse
 
@@ -87,7 +89,22 @@ def test_extract_claims_ollama_exact_quote_check():
         assert res.dropped_claims[0]["reason"] == "quote_not_in_text"
 
 
-def test_run_triage_pipeline_invalid_symbol(tmp_path):
+def test_extract_claims_is_pull_request_flag():
+    text = "Fixes #42 and adds unit tests for billing"
+    # For issues (is_pull_request=False), PR claims must be dropped
+    resp_issue = extract_claims_regex(text, is_pull_request=False)
+    types_issue = [c.type for c in resp_issue.claims]
+    assert "pr_fixes_issue" not in types_issue
+    assert "pr_adds_tests" not in types_issue
+
+    # For PRs (is_pull_request=True), PR claims must be kept
+    resp_pr = extract_claims_regex(text, is_pull_request=True)
+    types_pr = [c.type for c in resp_pr.claims]
+    assert "pr_fixes_issue" in types_pr
+    assert "pr_adds_tests" in types_pr
+
+
+def test_run_triage_pipeline_regex_fallback_never_invalid(tmp_path):
     (tmp_path / "app.py").write_text("def hello(): pass\n")
     text = "Crash in missing_func() in app.py"
     claims_resp, results, verdicts, status, summary = run_triage_pipeline(
@@ -95,8 +112,29 @@ def test_run_triage_pipeline_invalid_symbol(tmp_path):
         repo_root=tmp_path,
         use_llm=False,
     )
-    assert status == "invalid"
-    assert any(v.status == "invalid" for v in verdicts)
+    # Under regex fallback, claims must never be marked invalid
+    assert status == "uncertain"
+    assert all(v.status != "invalid" for v in verdicts)
+
+
+def test_run_triage_pipeline_llm_mode_can_be_invalid(tmp_path):
+    (tmp_path / "app.py").write_text("def hello(): pass\n")
+    text = "Crash in missing_func in app.py"
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "response": '{"claims": [{"id": "c1", "type": "symbol_exists", "symbol": "missing_func", "file": "app.py", "quote": "Crash in missing_func in app.py"}]}'
+    }
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("httpx.post", return_value=mock_resp):
+        claims_resp, results, verdicts, status, summary = run_triage_pipeline(
+            text=text,
+            repo_root=tmp_path,
+            use_llm=True,
+        )
+        assert status == "invalid"
+        assert any(v.status == "invalid" for v in verdicts)
 
 
 def test_run_triage_pipeline_pr_adds_tests():
@@ -118,6 +156,7 @@ diff --git a/tests/test_app.py b/tests/test_app.py
         text=text,
         repo_root=Path("."),
         raw_diff=sample_diff,
+        is_pull_request=True,
         use_llm=False,
     )
     assert status == "confirmed"
@@ -128,11 +167,39 @@ def test_render_markdown_report_formatting():
     claims_resp, results, verdicts, status, summary = run_triage_pipeline(
         text="Fixes #42",
         repo_root=Path("."),
+        is_pull_request=True,
         use_llm=False,
     )
-    md = render_markdown_report(claims_resp, results, verdicts, status, summary)
+    md = render_markdown_report(
+        claims_resp,
+        results,
+        verdicts,
+        overall=status,
+        overall_summary=summary,
+    )
+    assert REPORT_MARKER in md
     assert "## ![Verdict]" in md
     assert "Probe Triage Report" in md
     assert "Claim Breakdown" in md
     assert "<details>" in md
     assert "Maintainers make the final triage call" in md
+
+
+def test_find_editable_bot_comment_finds_probe_bot():
+    comments = [
+        {"id": 1, "body": "regular user comment", "user": {"login": "alice", "type": "User"}},
+        {"id": 2, "body": f"Old report {REPORT_MARKER}", "user": {"login": "probe[bot]", "type": "Bot"}},
+    ]
+    target = find_editable_bot_comment(comments)
+    assert target is not None
+    assert target["id"] == 2
+
+
+def test_find_editable_bot_comment_ignores_user_spoof():
+    # User tried to inject REPORT_MARKER into their comment -> must be ignored!
+    comments = [
+        {"id": 1, "body": f"Sneaky comment {REPORT_MARKER}", "user": {"login": "attacker", "type": "User"}},
+    ]
+    target = find_editable_bot_comment(comments)
+    assert target is None
+

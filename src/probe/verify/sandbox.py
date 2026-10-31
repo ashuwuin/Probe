@@ -8,6 +8,8 @@ Enforces:
 - Size-capped tmpfs (/tmp:rw,noexec,nosuid,size=64m)
 - Wall-clock timeout kill with container cleanup
 - Safe script delivery via stdin (docker run -i ... python -)
+- Strict detection of Docker failure codes (125/126/127/137) as inconclusive (never confirmed)
+- Verification that raised exception matches claimed exception
 - Graceful 'sandbox_unavailable' handling when Docker is not active
 """
 
@@ -21,6 +23,7 @@ from pathlib import Path
 from probe.models import Claim, CheckResult
 
 DEFAULT_IMAGE = "python:3.11-slim"
+MAX_OUTPUT_BYTES = 100_000
 
 
 def is_docker_available() -> bool:
@@ -117,9 +120,25 @@ def run_sandbox_repro(
             timeout=timeout_seconds,
         )
 
-        stdout = (res.stdout or "").strip()
-        stderr = (res.stderr or "").strip()
+        # Cap output size to prevent memory exhaustion
+        stdout = (res.stdout or "")[:MAX_OUTPUT_BYTES].strip()
+        stderr = (res.stderr or "")[:MAX_OUTPUT_BYTES].strip()
         output_snippet = (stderr or stdout)[-300:] if (stderr or stdout) else "No output"
+
+        # Check for Docker daemon/runtime failures (125: docker daemon/image error, 126: cannot invoke, 127: not found, 137: OOM/killed)
+        if (
+            res.returncode in (125, 126, 127, 137)
+            or "docker: Error response from daemon" in stderr
+            or "Unable to find image" in stderr
+            or "No such image" in stderr
+        ):
+            return CheckResult(
+                claim_id=claim.id,
+                checker="sandbox",
+                outcome="inconclusive",
+                evidence=f"Docker sandbox environment error (exit {res.returncode}): {output_snippet}",
+                details={"reason": "docker_error", "exit_code": res.returncode, "stderr": stderr},
+            )
 
         if res.returncode != 0:
             # 1. Snippet itself has SyntaxError (e.g. pasted traceback or invalid Python)
@@ -156,7 +175,29 @@ def run_sandbox_repro(
                     },
                 )
 
-            # 4. Verified failure reproduction
+            # 4. Compare actual exception against claimed exception
+            claimed_text = f"{claim.actual or ''} {claim.expected or ''} {claim.quote or ''}"
+            claimed_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", claimed_text)
+            actual_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", stderr)
+
+            claimed_exc = claimed_exc_matches[0] if claimed_exc_matches else None
+            actual_exc = actual_exc_matches[-1] if actual_exc_matches else None
+
+            if claimed_exc and actual_exc and claimed_exc != actual_exc:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Script failed with {actual_exc}, but claim specifically alleged {claimed_exc}: {output_snippet}",
+                    details={
+                        "reason": "unexpected_exception",
+                        "claimed_exception": claimed_exc,
+                        "actual_exception": actual_exc,
+                        "exit_code": res.returncode,
+                    },
+                )
+
+            # 5. Verified failure reproduction
             return CheckResult(
                 claim_id=claim.id,
                 checker="sandbox",
@@ -170,7 +211,6 @@ def run_sandbox_repro(
             )
         else:
             # Script executed with exit code 0
-            # Exit 0 contradicts only when an assertion failed to trigger or the claim explicitly asserted a crash
             has_assert = bool(re.search(r"\bassert\b", claim.repro))
             claims_crash = bool(
                 re.search(

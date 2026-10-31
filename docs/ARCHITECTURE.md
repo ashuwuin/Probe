@@ -146,6 +146,9 @@ It also applies an optional label, `triage:<verdict>`, and saves a JSON report u
 
 Untrusted reproduction steps are run exclusively inside an isolated container with zero network and read-only source code:
 
+> [!NOTE]
+> **Pre-requisite:** Run `docker pull python:3.11-slim` before executing sandbox triage. The runner uses `--pull never` to prevent unexpected mid-triage network downloads.
+
 | Control | Container setting |
 |---|---|
 | No network | `--network none` |

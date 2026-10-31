@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import patch, MagicMock
 import subprocess
 from probe.models import Claim
@@ -126,3 +127,56 @@ def test_sandbox_handles_timeout_and_kills_container():
             assert res.details.get("reason") == "timeout"
             # Verify docker kill was attempted
             assert any("kill" in str(c) for c in mock_sub.call_args_list)
+
+
+@pytest.mark.parametrize("exit_code", [125, 126, 127, 137])
+def test_sandbox_docker_failure_exit_codes_return_inconclusive(exit_code):
+    # Docker daemon/runtime failures must NEVER be treated as successful bug reproduction
+    claim = Claim(id="c1", type="bug_behavior", repro="print('crash')", quote="crashes")
+
+    mock_run = MagicMock()
+    mock_run.returncode = exit_code
+    mock_run.stdout = ""
+    mock_run.stderr = "docker: Error response from daemon: No such image"
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True):
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "inconclusive"
+            assert res.details["reason"] == "docker_error"
+            assert res.outcome != "supports"
+
+
+def test_sandbox_exception_mismatch_returns_inconclusive():
+    # Claim specifically alleges KeyError, but script raised ValueError -> unexpected exception
+    claim = Claim(id="c1", type="bug_behavior", repro="int('abc')", actual="raises KeyError", quote="crashes with KeyError")
+
+    mock_run = MagicMock()
+    mock_run.returncode = 1
+    mock_run.stdout = ""
+    mock_run.stderr = "ValueError: invalid literal for int() with base 10: 'abc'"
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True):
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "inconclusive"
+            assert res.details["reason"] == "unexpected_exception"
+            assert "KeyError" in res.evidence
+            assert "ValueError" in res.evidence
+
+
+def test_sandbox_exception_match_returns_supports():
+    # Claim specifically alleges KeyError, and script indeed raised KeyError -> verified reproduction
+    claim = Claim(id="c1", type="bug_behavior", repro="d = {}; d['missing']", actual="raises KeyError", quote="raises KeyError")
+
+    mock_run = MagicMock()
+    mock_run.returncode = 1
+    mock_run.stdout = ""
+    mock_run.stderr = "KeyError: 'missing'"
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True):
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "supports"
+            assert "KeyError" in res.evidence
+

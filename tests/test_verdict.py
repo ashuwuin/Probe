@@ -138,6 +138,28 @@ def test_verdict_v4_supporting_claim_alone_does_not_confirm():
     assert overall_status == "uncertain"
 
 
+def test_verdict_regex_fallback_never_returns_invalid():
+    # Regex fallback extraction must NEVER lead to an invalid verdict
+    claim = Claim(id="c1", type="symbol_exists", symbol="missing_func", quote="missing_func")
+    check = CheckResult(
+        claim_id="c1",
+        checker="static_ast",
+        outcome="contradicts",
+        evidence="Symbol missing_func not found in repository",
+        details={"confidence": "high"},
+    )
+    # With llm method -> invalid
+    res_llm = evaluate_claim_verdict(claim, [check], extraction_method="llm")
+    assert res_llm.status == "invalid"
+
+    # With regex_fallback method -> downgraded to uncertain
+    res_regex = evaluate_claim_verdict(claim, [check], extraction_method="regex_fallback")
+    assert res_regex.status == "uncertain"
+    assert "regex fallback" in res_regex.evidence
+    assert res_regex.confidence == "low"
+
+
+
 def test_decide_claim_alias():
     claim = Claim(id="c1", type="symbol_exists", quote="test")
     res = decide_claim(claim, [])
