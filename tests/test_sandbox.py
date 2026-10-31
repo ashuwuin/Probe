@@ -53,7 +53,7 @@ def test_sandbox_custom_image_passed_and_checked():
 def test_sandbox_chmod_does_not_follow_symlinks(tmp_path):
     # Security test: ensure repo copy chmod does not alter permissions of external target files
     external_secret = tmp_path / "id_rsa"
-    external_secret.write_text("PRIVATE KEY")
+    external_secret.write_text("dummy host secret content\n")
     external_secret.chmod(0o600)
 
     repo_dir = tmp_path / "untrusted_repo"
@@ -457,5 +457,50 @@ def test_sandbox_clean_run_with_expected_error_mention_does_not_contradict_wrong
             assert res.outcome == "inconclusive"
             assert res.outcome != "contradicts"
             assert res.details.get("reason") == "no_assertion_in_repro"
+
+
+@pytest.mark.skipif(not is_docker_available(), reason="Docker daemon or python:3.11-slim not available")
+def test_real_docker_sandbox_reproduces_assertion_error():
+    claim = Claim(
+        id="c1",
+        type="bug_behavior",
+        repro="assert 1 + 1 == 3, 'math is broken'",
+        quote="assert 1 + 1 == 3 raises AssertionError",
+        actual="AssertionError: math is broken",
+    )
+    res = run_sandbox_repro(claim)
+    assert res.outcome == "supports"
+    assert res.details.get("reason") == "reproduced"
+    assert res.details.get("exception") == "AssertionError"
+    assert "math is broken" in res.evidence
+
+
+@pytest.mark.skipif(not is_docker_available(), reason="Docker daemon or python:3.11-slim not available")
+def test_real_docker_sandbox_clean_run_contradicts():
+    claim = Claim(
+        id="c1",
+        type="bug_behavior",
+        repro="assert 1 + 1 == 2",
+        quote="assertion crashes with AssertionError",
+        actual="AssertionError",
+    )
+    res = run_sandbox_repro(claim)
+    assert res.outcome == "contradicts"
+    assert res.details.get("reason") == "ran_clean"
+
+
+@pytest.mark.skipif(not is_docker_available(), reason="Docker daemon or python:3.11-slim not available")
+def test_real_docker_sandbox_timeout_terminates_cleanly():
+    claim = Claim(
+        id="c1",
+        type="bug_behavior",
+        repro="import time; time.sleep(10)",
+        quote="hangs indefinitely",
+    )
+    res = run_sandbox_repro(claim, timeout_seconds=1)
+    assert res.outcome == "inconclusive"
+    assert res.details.get("reason") == "timeout"
+    assert "timed out after 1s" in res.evidence
+
 
 
