@@ -19,6 +19,7 @@ from pathlib import Path
 
 from probe.evaluation import (
     _load_claim_verdict_fn,
+    _load_overall_fn,
     compute_metrics,
     evaluate_case,
     load_cases,
@@ -30,12 +31,12 @@ from probe.github_client import GitHubClient, GitHubError
 HERE = Path(__file__).resolve().parent
 
 
-def _extract(case_text: str):
+def _extract(case_text: str, *, is_pull_request: bool):
     try:
         from probe.extract import extract_claims  # type: ignore[attr-defined]
     except ImportError as exc:
         raise SystemExit(f"--mode extracted needs probe.extract.extract_claims ({exc})") from exc
-    return extract_claims(case_text).claims
+    return extract_claims(case_text, is_pull_request=is_pull_request).claims
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     decide, verdict_source = _load_claim_verdict_fn()
+    _, overall_source = _load_overall_fn()
+    verdict_source = f"{verdict_source} (overall: {overall_source})"
     results = []
     with GitHubClient() as gh:
         for case in cases:
@@ -62,10 +65,19 @@ def main(argv: list[str] | None = None) -> int:
             except (GitHubError, ValueError) as exc:
                 root, error = None, f"{exc.__class__.__name__}: {exc}"
 
+            number = int(case.url.rstrip("/").split("/")[-1])
+            is_pr = case.kind == "pull_request"
+            if is_pr and root is not None and not case.diff:
+                try:
+                    pull = gh.get_pull(owner, repo, number)
+                    case = case.model_copy(update={"changed_files": pull.changed_files, "diff": pull.diff})
+                except (GitHubError, ValueError) as exc:
+                    root, error = None, f"{exc.__class__.__name__}: {exc}"
+
             claims = None
             if args.mode == "extracted" and root is not None:
-                issue = gh.get_issue(owner, repo, int(case.url.rstrip("/").split("/")[-1]))
-                claims = _extract(f"{issue.title}\n\n{issue.body}")
+                issue = gh.get_issue(owner, repo, number)
+                claims = _extract(f"{issue.title}\n\n{issue.body}", is_pull_request=is_pr)
 
             result = evaluate_case(case, root, claims=claims, decide=decide, error=error)
             results.append(result)

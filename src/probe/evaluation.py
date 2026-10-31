@@ -48,6 +48,11 @@ class EvalCase(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     diff: str = ""
     maintainer_labels: list[str] = Field(default_factory=list)
+    group: str = Field(
+        default="maintainer-labelled issues",
+        description="Report results per group; cases picked because the checkers can decide them go in their own group.",
+    )
+    label_source: str = Field(default="maintainer", description="'maintainer' label, or 'manual' verification by us")
 
     @property
     def owner_repo(self) -> tuple[str, str]:
@@ -70,7 +75,21 @@ def run_checks(claim: Claim, repo_root: Path, changed_files: list[str] | None = 
         results.append(check_static_symbol(repo_root, claim))
     if claim.type in ("pr_adds_tests", "pr_fixes_issue"):
         results.append(check_pr_claim(claim, changed_files or [], diff))
+    if claim.repro and claim.type in ("bug_behavior", "security_vuln"):
+        sandbox = _load_sandbox_fn()
+        if sandbox is not None:
+            results.append(sandbox(claim, repo_root=repo_root))
     return results
+
+
+def _load_sandbox_fn() -> Callable[..., CheckResult] | None:
+    """probe.verify.sandbox.run_sandbox_repro when that module exists (it reports
+    'sandbox_unavailable' itself when Docker is missing; nothing runs on the host)."""
+    try:
+        from probe.verify.sandbox import run_sandbox_repro  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return run_sandbox_repro
 
 
 # --------------------------------------------------------------------------
@@ -106,19 +125,54 @@ def baseline_claim_verdict(claim: Claim, results: list[CheckResult]) -> VerdictR
     return _verdict(claim, "uncertain", "low", f"Not enough evidence to decide. {reasons}")
 
 
-def _load_claim_verdict_fn() -> tuple[Callable[[Claim, list[CheckResult]], VerdictResult], str]:
+def _verdict_module():
     try:
         from probe import verdict as verdict_module  # type: ignore[attr-defined]
     except ImportError:
+        return None
+    return verdict_module
+
+
+def _load_claim_verdict_fn() -> tuple[Callable[[Claim, list[CheckResult]], VerdictResult], str]:
+    """Probe's real claim rules when available; the baseline only if probe.verdict is absent."""
+    module = _verdict_module()
+    if module is None:
         return baseline_claim_verdict, "baseline rules (probe.verdict not available yet)"
-    fn = getattr(verdict_module, "decide_claim", None)
-    if callable(fn):
-        return fn, "probe.verdict.decide_claim"
-    return baseline_claim_verdict, "baseline rules (probe.verdict has no decide_claim())"
+    for name in ("decide_claim", "evaluate_claim_verdict"):
+        fn = getattr(module, name, None)
+        if callable(fn):
+            # decide_claim is an alias in probe.verdict; report the canonical name when it is one.
+            canonical = getattr(module, "evaluate_claim_verdict", None)
+            label = "evaluate_claim_verdict" if fn is canonical else name
+            return fn, f"probe.verdict.{label}"
+    return baseline_claim_verdict, "baseline rules (probe.verdict has no claim-verdict function)"
+
+
+def _load_overall_fn() -> tuple[Callable[[list[Claim], list[VerdictResult]], str], str]:
+    """probe.verdict.get_overall_verdict when available, so the benchmark, CLI and
+    GitHub comment share one rule; otherwise baseline_issue_prediction."""
+    module = _verdict_module()
+    fn = getattr(module, "get_overall_verdict", None) if module else None
+    if not callable(fn):
+        return baseline_issue_prediction, "baseline overall rule"
+
+    def overall(claims: list[Claim], verdicts: list[VerdictResult]) -> str:
+        try:
+            status, _summary = fn(verdicts, claims)  # claims are needed for the core-claim rule
+        except TypeError:
+            status, _summary = fn(verdicts)
+        return status
+
+    return overall, "probe.verdict.get_overall_verdict"
 
 
 def issue_prediction(claims: list[Claim], verdicts: list[VerdictResult]) -> str:
-    """Combine claim verdicts into one issue-level prediction.
+    """Issue-level verdict using Probe's shared rule (probe.verdict) when it exists."""
+    return _load_overall_fn()[0](claims, verdicts)
+
+
+def baseline_issue_prediction(claims: list[Claim], verdicts: list[VerdictResult]) -> str:
+    """Fallback overall rule (used only while probe.verdict is unavailable).
 
     * Core claims (bug, security, PR claims) carry the report's allegation:
       ``confirmed`` if any is confirmed, ``invalid`` only if every one is invalid,
@@ -178,7 +232,7 @@ def evaluate_case(
     decide: Callable[[Claim, list[CheckResult]], VerdictResult] | None = None,
     error: str | None = None,
 ) -> CaseResult:
-    decide = decide or baseline_claim_verdict
+    decide = decide or _load_claim_verdict_fn()[0]
     claims = case.gold_claims if claims is None else claims
     if repo_root is None:
         verdicts = [_verdict(c, "uncertain", "low", f"Repository snapshot unavailable: {error}") for c in claims]
@@ -280,6 +334,18 @@ def _cell(text: str, limit: int = 140) -> str:
     return text.replace("|", "\\|")
 
 
+def _group_rows(results: list[CaseResult]) -> list[str]:
+    rows = []
+    for group in dict.fromkeys(r.case.group for r in results):
+        members = [r for r in results if r.case.group == group]
+        decided = [r for r in members if r.decisive]
+        correct = sum(r.correct for r in decided)
+        wrong_invalid = sum(r.prediction == "invalid" and r.case.label != "invalid" for r in members)
+        accuracy = f"{correct}/{len(decided)} ({correct / len(decided):.0%})" if decided else "n/a"
+        rows.append(f"| {group} | {len(members)} | {len(decided)}/{len(members)} | {accuracy} | {wrong_invalid} |")
+    return rows
+
+
 def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, verdict_source: str, generated: str) -> str:
     agree, checks = metrics.check_agreement
     lines = [
@@ -302,6 +368,12 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         f"| Accuracy (decisive cases only) | {_pct(metrics.accuracy_decisive)} | Correct among the cases Probe decided |",
         f"| Accuracy (all cases) | {_pct(metrics.accuracy_all)} | `uncertain` counts as not correct |",
         f"| Checker agreement | {agree}/{checks} | Check outcomes that matched the hand-annotated expected outcome |",
+        "",
+        "### By group",
+        "",
+        "| Group | Cases | Decided | Accuracy on decided | Wrong `invalid` |",
+        "|---|---|---|---|---|",
+        *_group_rows(results),
         "",
         "### Per label",
         "",
@@ -341,6 +413,10 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         "- Gold-claims mode measures the checkers and verdict rules with hand-written claims; it does not "
         "measure LLM extraction.",
         "- The dataset is small (see `eval/cases/`); treat percentages as indicative.",
+        "- Cases in the \"checkable\" groups were selected *because* the static and PR checkers can decide them; "
+        "report them separately from the maintainer-labelled issues, never as one blended accuracy.",
+        "- Labels marked `manual` (PR test claims) come from our own inspection of the PR's changed files, "
+        "not from a maintainer label.",
         "",
     ]
     return "\n".join(lines)

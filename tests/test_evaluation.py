@@ -8,7 +8,10 @@ import pytest
 
 from probe.evaluation import (
     EvalCase,
+    _load_claim_verdict_fn,
+    _load_overall_fn,
     baseline_claim_verdict,
+    baseline_issue_prediction,
     compute_metrics,
     evaluate_case,
     issue_prediction,
@@ -97,22 +100,22 @@ def _v(cid, status):
 
 def test_supporting_claim_alone_does_not_confirm_issue():
     claims = [claim("c1", "symbol_exists", symbol="Label"), claim("c2", "bug_behavior")]
-    assert issue_prediction(claims, [_v("c1", "confirmed"), _v("c2", "uncertain")]) == "uncertain"
+    assert baseline_issue_prediction(claims, [_v("c1", "confirmed"), _v("c2", "uncertain")]) == "uncertain"
 
 
 def test_invalid_requires_every_core_claim_contradicted():
     claims = [claim("c1"), claim("c2")]
-    assert issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "uncertain")]) == "uncertain"
-    assert issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "invalid")]) == "invalid"
+    assert baseline_issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "uncertain")]) == "uncertain"
+    assert baseline_issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "invalid")]) == "invalid"
 
 
 def test_confirmed_wins_over_other_core_verdicts():
     claims = [claim("c1"), claim("c2")]
-    assert issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "confirmed")]) == "confirmed"
+    assert baseline_issue_prediction(claims, [_v("c1", "invalid"), _v("c2", "confirmed")]) == "confirmed"
 
 
 def test_supporting_only_claims_can_be_invalid():
-    assert issue_prediction([claim("c1", "symbol_exists")], [_v("c1", "invalid")]) == "invalid"
+    assert baseline_issue_prediction([claim("c1", "symbol_exists")], [_v("c1", "invalid")]) == "invalid"
 
 
 @pytest.mark.parametrize(
@@ -133,7 +136,7 @@ def test_crash_report_with_only_existing_symbol_is_uncertain(repo):
 
 
 def test_no_claims_is_uncertain():
-    assert issue_prediction([], []) == "uncertain"
+    assert baseline_issue_prediction([], []) == "uncertain"
 
 
 # ---------------------------------------------------------------- evaluate_case
@@ -256,3 +259,39 @@ def test_local_examples_offline(example_id, status):
     result = gen.run_example(manifest[example_id], gh=None)
     assert result["status"] == status
     assert "Probe evidence report" in gen.render(result)
+
+
+
+# ---------------------------------------------------------------- shared rules (probe.verdict)
+
+def test_benchmark_uses_probe_verdict_when_it_exists():
+    """Fails if probe.verdict is importable but the benchmark silently falls back to the baseline."""
+    verdict = pytest.importorskip("probe.verdict")
+    decide, source = _load_claim_verdict_fn()
+    assert decide is not baseline_claim_verdict, source
+    assert source.startswith("probe.verdict.")
+    overall, overall_source = _load_overall_fn()
+    assert overall is not baseline_issue_prediction
+    assert overall_source == "probe.verdict.get_overall_verdict"
+    assert callable(getattr(verdict, "evaluate_claim_verdict"))
+
+
+def test_shared_overall_rule_never_confirms_on_supporting_facts_alone():
+    """Whatever rule is active (probe.verdict or baseline): "the function exists"
+    must not make a bug report confirmed."""
+    claims = [claim("c1", "symbol_exists", symbol="calculate_tax")]
+    assert issue_prediction(claims, [_v("c1", "confirmed")]) == "uncertain"
+
+
+def test_shared_overall_rule_one_narrow_contradiction_is_not_invalid():
+    claims = [claim("c1"), claim("c2", "symbol_exists")]
+    assert issue_prediction(claims, [_v("c1", "confirmed"), _v("c2", "invalid")]) == "confirmed"
+    assert issue_prediction([claim("c1"), claim("c2")], [_v("c1", "invalid"), _v("c2", "uncertain")]) == "uncertain"
+
+
+def test_group_rows_report_coverage_per_group(repo):
+    a = evaluate_case(case("invalid", [claim(symbol="nope_fn")], cid="a", group="checkable"), repo)
+    b = evaluate_case(case("confirmed", cid="b"), repo)
+    md = render_markdown([a, b], compute_metrics([a, b]), mode="gold", verdict_source="x", generated="now")
+    assert "| checkable | 1 | 1/1 | 1/1 (100%) | 0 |" in md
+    assert "| maintainer-labelled issues | 1 | 0/1 | n/a | 0 |" in md
