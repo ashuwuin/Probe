@@ -471,7 +471,22 @@ def run_triage_pipeline(
 
         # Check C: Docker Sandbox Reproduction (for behavioral crashes)
         if claim.repro:
-            if allow_sandbox:
+            if is_pr:
+                # On a PR the snapshot is the PR head, i.e. the code WITH the change. A crash there
+                # does not confirm the reported bug (it may be a broken fix) and a clean run does
+                # not mean "cannot reproduce" (it may be a working fix). Only a base-vs-head
+                # comparison could tell them apart, so report it as inconclusive.
+                res = CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=(
+                        "Not run: on a pull request the repro would execute the PR's own (changed) code, "
+                        "so its result cannot confirm or refute the reported bug."
+                    ),
+                    details={"reason": "pr_head_not_comparable", "skipped_reason": "pull_request"},
+                )
+            elif allow_sandbox:
                 res = run_sandbox_repro(claim, repo_root=repo_root)
             else:
                 res = CheckResult(

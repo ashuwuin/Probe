@@ -467,7 +467,9 @@ def test_partial_repro_script_is_rejected():
     )
     with mock_post(reply):
         claim = extract_claims(LONG_SCRIPT_ISSUE).claims[0]
-    assert claim.repro is None
+    # Never the cut-off half; the report's single whole block may be attached instead.
+    assert claim.repro != first_25_lines
+    assert claim.repro in (None, LONG_SCRIPT)
 
 
 def test_whole_repro_script_is_kept():
@@ -1058,3 +1060,98 @@ def test_live_qwen3_extraction():
     assert all(c.quote.split()[0] in text for c in result.claims)
     vuln = [c for c in result.claims if c.type == "security_vuln"]
     assert vuln and vuln[0].symbol == "parse_url_v2"
+
+
+# ---------------------------------------------------------------- quotes with Markdown marks dropped
+
+from probe.extract import _LLMClaim, _apply_guardrails, _locate_quote  # noqa: E402
+
+_ISSUE = (
+    "apply_discount returns the wrong price\n\n"
+    "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0.\n\n"
+    "```python\nfrom shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0\n```\n\n"
+    "Expected: `90.0`. Actual: `AssertionError: 0.0`.\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("model_quote", "expected"),
+    [
+        ("apply_discount() in shop/billing.py", "`apply_discount()` in `shop/billing.py`"),
+        ("Expected: 90.0. Actual: AssertionError: 0.0", "Expected: `90.0`. Actual: `AssertionError: 0.0`"),
+        ("apply_discount  returns the wrong\nprice", "apply_discount returns the wrong price"),
+        ("apply_discount returns the wrong price", "apply_discount returns the wrong price"),
+    ],
+)
+def test_quote_without_markdown_marks_is_recovered_verbatim(model_quote, expected):
+    located = _locate_quote(model_quote, _ISSUE)
+    assert located == expected
+    assert located in _ISSUE  # still an exact substring of the report
+
+
+@pytest.mark.parametrize("model_quote", ["Reproduction: ...", "apply_discount always crashes", "", "   "])
+def test_invented_quotes_are_still_rejected(model_quote):
+    assert _locate_quote(model_quote, _ISSUE) is None
+
+
+def test_guardrails_keep_backtick_stripped_claim_with_its_repro():
+    raw = [_LLMClaim(
+        type="bug_behavior",
+        quote="apply_discount() in shop/billing.py returns 0.0 for a 10% discount on 100 instead of 90.0.",
+        symbol="apply_discount",
+        file="shop/billing.py",
+        repro="from shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0",
+    )]
+    kept, dropped = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert dropped == []
+    assert kept[0].quote.startswith("`apply_discount()` in `shop/billing.py`") and kept[0].quote in _ISSUE
+    assert kept[0].repro is not None and kept[0].symbol == "apply_discount"
+
+
+
+def test_single_code_block_is_attached_when_model_skips_repro():
+    raw = [
+        _LLMClaim(type="bug_behavior", quote="apply_discount returns the wrong price", symbol="apply_discount"),
+        _LLMClaim(type="symbol_exists", quote="apply_discount() in shop/billing.py", symbol="apply_discount"),
+    ]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    bug = next(c for c in kept if c.type == "bug_behavior")
+    assert bug.repro == "from shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0"
+    assert bug.repro in _ISSUE                      # verbatim from the report
+    assert next(c for c in kept if c.type == "symbol_exists").repro is None
+
+
+def test_no_repro_attached_when_blocks_are_ambiguous_or_not_code():
+    raw = [_LLMClaim(type="bug_behavior", quote="apply_discount returns the wrong price")]
+    two_blocks = _ISSUE + "\n```python\nprint(apply_discount(1, 1))\n```\n"
+    kept, _ = _apply_guardrails(raw, two_blocks, is_pull_request=False)
+    assert kept[0].repro is None
+    traceback_only = "apply_discount returns the wrong price\n\n```\nTraceback (most recent call last):\n  File \"a.py\", line 1\nValueError: x\n```\n"
+    kept, _ = _apply_guardrails(raw, traceback_only, is_pull_request=False)
+    assert kept[0].repro is None
+
+
+
+def test_repro_goes_only_to_the_nearest_claim_before_the_block():
+    raw = [
+        _LLMClaim(type="bug_behavior", quote="apply_discount returns the wrong price"),
+        _LLMClaim(type="bug_behavior", quote="returns 0.0 for a 10% discount on 100 instead of 90.0."),
+        _LLMClaim(type="bug_behavior", quote="Expected: 90.0. Actual: AssertionError: 0.0"),  # after the block
+    ]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert [c.repro is not None for c in kept] == [False, True, False]
+
+
+def test_repro_not_attached_when_no_claim_introduces_the_block():
+    raw = [_LLMClaim(type="bug_behavior", quote="Expected: 90.0. Actual: AssertionError: 0.0")]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert kept[0].repro is None
+
+
+def test_repro_attached_to_the_only_bug_claim_without_one():
+    raw = [
+        _LLMClaim(type="bug_behavior", quote="apply_discount returns the wrong price"),
+        _LLMClaim(type="symbol_exists", quote="apply_discount() in shop/billing.py", symbol="apply_discount"),
+    ]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert [c.repro is not None for c in kept] == [True, False]

@@ -574,3 +574,34 @@ def test_cli_main_triage_github_url_not_found(monkeypatch):
             main()
         assert exc.value.code == 1
 
+
+
+
+# ---------------------------------------------------------------- repros on pull requests
+
+def test_pull_request_repro_is_not_run_against_pr_head(tmp_path):
+    """On a PR the repro would run the patched code: a clean run is a working fix, not
+    'cannot reproduce', and a crash may be a broken fix, not a confirmed bug."""
+    from probe import cli as cli_module
+
+    text = "Fixes the crash in `apply_discount()`.\n\n```python\nimport math\nassert math.floor(1.5) == 1\n```\n"
+    with patch.object(cli_module, "run_sandbox_repro") as sandbox:
+        _, results, verdicts, overall, _ = cli_module.run_triage_pipeline(
+            text, tmp_path, raw_diff="diff --git a/x.py b/x.py\n", is_pull_request=True, use_llm=False
+        )
+    sandbox.assert_not_called()
+    sandbox_results = [r for r in results if r.checker == "sandbox"]
+    assert sandbox_results and all(r.outcome == "inconclusive" for r in sandbox_results)
+    assert all(r.details.get("reason") == "pr_head_not_comparable" for r in sandbox_results)
+    assert all(v.status not in ("confirmed", "cannot-reproduce") for v in verdicts if v.claim_id in {r.claim_id for r in sandbox_results})
+
+
+def test_issue_repro_still_runs_in_sandbox(tmp_path):
+    from probe import cli as cli_module
+    from probe.models import CheckResult
+
+    text = "`apply_discount()` crashes.\n\n```python\nimport math\nassert math.floor(1.5) == 2\n```\n"
+    fake = lambda claim, repo_root=None: CheckResult(claim_id=claim.id, checker="sandbox", outcome="supports", evidence="reproduced")
+    with patch.object(cli_module, "run_sandbox_repro", side_effect=fake) as sandbox:
+        cli_module.run_triage_pipeline(text, tmp_path, is_pull_request=False, use_llm=False)
+    assert sandbox.called
