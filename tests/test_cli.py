@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -11,6 +12,8 @@ from probe.cli import (
     render_terminal_report,
     render_markdown_report,
     find_editable_bot_comment,
+    post_or_update_comment,
+    main,
     REPORT_MARKER,
 )
 from probe.models import Claim, ClaimsResponse
@@ -264,4 +267,230 @@ def test_find_editable_bot_comment_ignores_other_bots():
     ]
     target = find_editable_bot_comment(comments)
     assert target is None
+
+
+def test_post_or_update_comment_creates_new():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and "/issues/10/comments" in str(request.url):
+            return httpx.Response(200, json=[])
+        if request.method == "POST" and "/issues/10/comments" in str(request.url):
+            body = json.loads(request.content)
+            assert "Triage Report" in body["body"]
+            return httpx.Response(201, json={"id": 101, "html_url": "https://github.com/octo/demo/issues/10#issuecomment-101"})
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.github.com")
+    res = post_or_update_comment("octo", "demo", 10, "### Triage Report", token="fake_token", client=client)
+    assert res["action"] == "created"
+    assert res["id"] == 101
+    assert "issuecomment-101" in res["html_url"]
+
+
+def test_post_or_update_comment_updates_existing_bot():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and "/issues/10/comments" in str(request.url):
+            return httpx.Response(200, json=[
+                {"id": 555, "body": f"Old report {REPORT_MARKER}", "user": {"login": "probe[bot]", "type": "Bot"}}
+            ])
+        if request.method == "PATCH" and "/issues/comments/555" in str(request.url):
+            body = json.loads(request.content)
+            assert "New Triage Report" in body["body"]
+            return httpx.Response(200, json={"id": 555, "html_url": "https://github.com/octo/demo/issues/10#issuecomment-555"})
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.github.com")
+    res = post_or_update_comment("octo", "demo", 10, "### New Triage Report", token="fake_token", client=client)
+    assert res["action"] == "updated"
+    assert res["id"] == 555
+    assert "issuecomment-555" in res["html_url"]
+
+
+def test_post_or_update_comment_ignores_user_spoof_and_creates_new():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and "/issues/10/comments" in str(request.url):
+            return httpx.Response(200, json=[
+                {"id": 888, "body": f"Spoofed {REPORT_MARKER}", "user": {"login": "attacker", "type": "User"}}
+            ])
+        if request.method == "POST" and "/issues/10/comments" in str(request.url):
+            return httpx.Response(201, json={"id": 999, "html_url": "https://github.com/octo/demo/issues/10#issuecomment-999"})
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.github.com")
+    res = post_or_update_comment("octo", "demo", 10, "### Report", token="fake_token", client=client)
+    assert res["action"] == "created"
+    assert res["id"] == 999
+
+
+def test_post_or_update_comment_requires_token(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="GITHUB_TOKEN is required"):
+        post_or_update_comment("octo", "demo", 10, "body", token=None)
+
+
+def test_cli_main_triage_github_issue_url(monkeypatch, tmp_path, capsys):
+    from datetime import datetime, timezone
+    from probe.github_client import IssueData, Snapshot
+
+    # Create dummy app.py in repo snapshot
+    (tmp_path / "app.py").write_text("def hello(): pass\n")
+
+    fake_issue = IssueData(
+        owner="octo",
+        repo="demo",
+        number=7,
+        title="Crash in hello()",
+        body="hello() crashes on empty string",
+        state="open",
+        created_at=datetime.now(timezone.utc),
+        html_url="https://github.com/octo/demo/issues/7",
+    )
+    fake_snapshot = Snapshot(
+        owner="octo",
+        repo="demo",
+        sha="1234567890123456789012345678901234567890",
+        path=tmp_path,
+        resolved_by="default_branch",
+    )
+
+    with patch("probe.cli.GitHubClient") as mock_client_cls:
+        client_instance = MagicMock()
+        client_instance.get_issue.return_value = fake_issue
+        client_instance.snapshot_for_issue.return_value = fake_snapshot
+        mock_client_cls.return_value = client_instance
+
+        monkeypatch.setattr(
+            sys, "argv",
+            ["probe", "triage", "https://github.com/octo/demo/issues/7", "--markdown", "--no-llm"]
+        )
+        main()
+
+        out = capsys.readouterr().out
+        assert REPORT_MARKER in out
+        assert "octo/demo#7" in out
+        assert client_instance.get_issue.called
+        assert client_instance.snapshot_for_issue.called
+
+
+def test_cli_main_triage_github_pull_url(monkeypatch, tmp_path, capsys):
+    from datetime import datetime, timezone
+    from probe.github_client import PullData, Snapshot
+
+    (tmp_path / "app.py").write_text("def hello(): pass\n")
+
+    fake_pull = PullData(
+        owner="octo",
+        repo="demo",
+        number=12,
+        title="Add tests for hello",
+        body="Fixes #7 and adds unit tests",
+        state="open",
+        created_at=datetime.now(timezone.utc),
+        html_url="https://github.com/octo/demo/pull/12",
+        head_sha="a" * 40,
+        base_sha="b" * 40,
+        base_ref="main",
+        diff="""diff --git a/tests/test_hello.py b/tests/test_hello.py
+--- /dev/null
++++ b/tests/test_hello.py
+@@ -0,0 +1,2 @@
++def test_hello():
++    pass
+""",
+    )
+    fake_snapshot = Snapshot(
+        owner="octo",
+        repo="demo",
+        sha="a" * 40,
+        path=tmp_path,
+        resolved_by="pr_head",
+    )
+
+    with patch("probe.cli.GitHubClient") as mock_client_cls:
+        client_instance = MagicMock()
+        client_instance.get_pull.return_value = fake_pull
+        client_instance.snapshot_for_pull.return_value = fake_snapshot
+        mock_client_cls.return_value = client_instance
+
+        monkeypatch.setattr(
+            sys, "argv",
+            ["probe", "triage", "https://github.com/octo/demo/pull/12", "--markdown", "--no-llm"]
+        )
+        main()
+
+        out = capsys.readouterr().out
+        assert REPORT_MARKER in out
+        assert "octo/demo#12" in out
+        assert client_instance.get_pull.called
+        assert client_instance.snapshot_for_pull.called
+
+
+def test_cli_main_triage_github_url_with_post(monkeypatch, tmp_path, capsys):
+    from datetime import datetime, timezone
+    from probe.github_client import IssueData, Snapshot
+
+    (tmp_path / "app.py").write_text("def hello(): pass\n")
+
+    fake_issue = IssueData(
+        owner="octo",
+        repo="demo",
+        number=7,
+        title="Crash in hello()",
+        body="hello() crashes on empty string",
+        state="open",
+        created_at=datetime.now(timezone.utc),
+        html_url="https://github.com/octo/demo/issues/7",
+    )
+    fake_snapshot = Snapshot(
+        owner="octo",
+        repo="demo",
+        sha="1234567890123456789012345678901234567890",
+        path=tmp_path,
+        resolved_by="default_branch",
+    )
+
+    with patch("probe.cli.GitHubClient") as mock_client_cls, \
+         patch("probe.cli.post_or_update_comment") as mock_post:
+        client_instance = MagicMock()
+        client_instance.get_issue.return_value = fake_issue
+        client_instance.snapshot_for_issue.return_value = fake_snapshot
+        mock_client_cls.return_value = client_instance
+        mock_post.return_value = {"action": "created", "id": 123, "html_url": "https://github.com/octo/demo/issues/7#issuecomment-123"}
+
+        monkeypatch.setattr(
+            sys, "argv",
+            ["probe", "triage", "https://github.com/octo/demo/issues/7", "--post", "--no-llm"]
+        )
+        main()
+
+        out = capsys.readouterr().out
+        assert "Comment created: https://github.com/octo/demo/issues/7#issuecomment-123" in out
+        assert mock_post.called
+        kwargs = mock_post.call_args.kwargs
+        assert kwargs["owner"] == "octo"
+        assert kwargs["repo"] == "demo"
+        assert kwargs["issue_number"] == 7
+        assert REPORT_MARKER in kwargs["body"]
+
+
+def test_cli_main_triage_github_url_not_found(monkeypatch):
+    from probe.github_client import NotFoundError
+
+    with patch("probe.cli.GitHubClient") as mock_client_cls:
+        client_instance = MagicMock()
+        client_instance.get_issue.side_effect = NotFoundError("Not found", 404)
+        mock_client_cls.return_value = client_instance
+
+        monkeypatch.setattr(
+            sys, "argv",
+            ["probe", "triage", "https://github.com/octo/demo/issues/999", "--no-llm"]
+        )
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
 
