@@ -417,3 +417,70 @@ def test_message_when_named_file_exists_but_symbol_missing(repo):
     assert result.outcome == "contradicts"
     assert "not defined in the named file `src/payments/billing.py`" in result.evidence
     assert "was not found" not in result.evidence
+
+
+# ---------------------------------------------------------------- installed copies of this project
+
+@pytest.fixture
+def src_layout_repo(tmp_path):
+    pkg = tmp_path / "src" / "payments"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    shutil.copy(FIXTURES / "billing.py", pkg / "billing.py")
+    core = tmp_path / "src" / "poetry"          # namespace dir without core/
+    core.mkdir()
+    (core / "__init__.py").write_text("def __init__():\n    pass\n")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/u/.venv/lib/python3.12/site-packages/payments/billing.py",
+        "C:\\Python311\\Lib\\site-packages\\payments\\billing.py",
+        "/usr/lib/python3/dist-packages/payments/billing.py",
+        "`~/.local/lib/python3.11/site-packages/payments/billing.py`",
+    ],
+)
+def test_installed_copy_of_this_project_maps_to_src_layout(src_layout_repo, path):
+    result = check_static_symbol(src_layout_repo, claim("calculate_tax", path))
+    assert result.outcome == "supports"
+    assert result.details["file"] == "src/payments/billing.py"
+    assert result.details["confidence"] == "high"
+
+
+def test_installed_copy_maps_to_flat_layout(repo):
+    # `repo` fixture has src/payments/billing.py; build a flat-layout package too
+    (repo / "shop").mkdir()
+    (repo / "shop" / "cart.py").write_text("def add_item():\n    pass\n")
+    result = check_static_symbol(repo, claim("add_item", "/x/site-packages/shop/cart.py"))
+    assert result.outcome == "supports" and result.details["file"] == "shop/cart.py"
+
+
+def test_installed_copy_symbol_missing_in_mapped_file_can_contradict(src_layout_repo):
+    result = check_static_symbol(src_layout_repo, claim("refund_everything", "/x/site-packages/payments/billing.py"))
+    assert result.outcome == "contradicts"
+    assert "not defined in the named file `src/payments/billing.py`" in result.evidence
+
+
+def test_namespace_package_from_other_distribution_stays_external(src_layout_repo):
+    """poetry#9961: site-packages/poetry/core/... is poetry-core, not this repo's src/poetry/."""
+    path = "~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py"
+    result = check_static_symbol(src_layout_repo, claim("__init__", path))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_file"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/x/site-packages/numpy/core/numeric.py",       # package not in repo
+        "/x/site-packages/payments",                     # no file part
+        "/x/site-packages/../../etc/passwd",             # traversal after the segment
+        "/x/site-packages/payments/../../../secret.py",
+    ],
+)
+def test_unmappable_installed_paths_stay_external(src_layout_repo, path):
+    result = check_static_symbol(src_layout_repo, claim("calculate_tax", path))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_file"

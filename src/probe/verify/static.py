@@ -129,6 +129,35 @@ def normalize_claim_path(raw: str) -> str:
     return "/".join(parts)
 
 
+def map_installed_path(root: Path, raw: str) -> str | None:
+    """Map an installed-package path from a traceback onto this repository.
+
+    ``…/site-packages/requests/utils.py`` -> ``requests/utils.py`` or
+    ``src/requests/utils.py`` when that file exists in the repo (the reporter
+    hit a bug in the installed copy of *this* project). Returns None when the
+    package folder is absent, or present but without that file. The latter is
+    a namespace package from another distribution, e.g. ``poetry/core/…`` is
+    poetry-core, not poetry.
+    """
+    parts = [seg for seg in re.split(r"[\\/]+", raw.strip().strip("`'\"")) if seg]
+    idx = max((i for i, seg in enumerate(parts) if seg.lower() in EXTERNAL_PATH_SEGMENTS), default=-1)
+    rest = parts[idx + 1 :]
+    if idx < 0 or len(rest) < 2:
+        return None
+    try:
+        rel = normalize_claim_path("/".join(rest))
+    except PathEscapeError:
+        return None
+    for prefix in ("", "src/"):
+        candidate = f"{prefix}{rel}"
+        try:
+            if resolve_inside(root, candidate).is_file():
+                return candidate
+        except PathEscapeError:
+            return None
+    return None
+
+
 def resolve_inside(root: Path, rel: str) -> Path:
     """Resolve ``rel`` under ``root``; reject anything (incl. symlinks) that escapes."""
     candidate = (root / rel).resolve()
@@ -325,16 +354,20 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
 
     rel_file: str | None = None
     if claim.file:
+        claimed_path = claim.file
         segments = {seg.lower() for seg in re.split(r"[\\/]+", claim.file)}
         if segments & EXTERNAL_PATH_SEGMENTS:
-            return _result(
-                claim, "inconclusive",
-                "The claimed file is inside an installed dependency (site-packages), not this repository; "
-                "its absence here says nothing about the claim.",
-                reason="external_file",
-            )
+            mapped = map_installed_path(root, claim.file)
+            if mapped is None:
+                return _result(
+                    claim, "inconclusive",
+                    "The claimed file is inside an installed package (site-packages) that this repository "
+                    "does not contain; its absence here says nothing about the claim.",
+                    reason="external_file",
+                )
+            claimed_path = mapped
         try:
-            rel_file = normalize_claim_path(claim.file)
+            rel_file = normalize_claim_path(claimed_path)
             resolve_inside(root, rel_file)
         except PathEscapeError as exc:
             return _result(
