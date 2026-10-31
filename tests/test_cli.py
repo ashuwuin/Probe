@@ -33,7 +33,23 @@ def test_regex_extract_finds_pr_claims():
     assert fixes.issue_number == 104
 
 
-def test_regex_extract_extracts_code_block():
+def test_regex_extract_s4_adds_unit_tests():
+    # S4: Must catch "adds unit tests"
+    text = "Fixes #42 and adds unit tests for billing"
+    resp = extract_claims_regex(text)
+    types = [c.type for c in resp.claims]
+    assert "pr_adds_tests" in types
+
+
+def test_regex_extract_ignores_pasted_traceback():
+    # S1 in CLI: Don't extract a pasted traceback as a runnable repro script
+    text = "Here is the error:\n```\nTraceback (most recent call last):\n  File 'x.py', line 1\nSyntaxError: bad\n```"
+    resp = extract_claims_regex(text)
+    for c in resp.claims:
+        assert c.repro is None
+
+
+def test_regex_extract_valid_code_block():
     text = "Found a bug:\n```python\nfrom x import y\ny()\n```"
     resp = extract_claims_regex(text)
     assert len(resp.claims) == 1
@@ -55,12 +71,12 @@ def test_extract_claims_ollama_mocked():
         assert res.method == "llm"
 
 
-def test_extract_claims_ollama_drops_hallucinated_quote():
+def test_extract_claims_ollama_exact_quote_check():
     text = "Bug in calculate_tax in billing.py"
     mock_resp = MagicMock()
-    # Quote is not in source text
+    # Case mismatch or hallucinated quote must be dropped
     mock_resp.json.return_value = {
-        "response": '{"claims": [{"id": "c1", "type": "symbol_exists", "symbol": "foo", "quote": "this quote is completely made up"}]}'
+        "response": '{"claims": [{"id": "c1", "type": "symbol_exists", "symbol": "foo", "quote": "BUG IN CALCULATE_TAX"}]}'
     }
     mock_resp.raise_for_status = MagicMock()
 
@@ -97,7 +113,7 @@ diff --git a/tests/test_app.py b/tests/test_app.py
 +def test_hello():
 +    assert True
 """
-    text = "Adds tests for app"
+    text = "Adds unit tests for app"
     claims_resp, results, verdicts, status, summary = run_triage_pipeline(
         text=text,
         repo_root=Path("."),

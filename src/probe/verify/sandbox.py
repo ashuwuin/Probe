@@ -2,17 +2,25 @@
 
 Enforces:
 - Zero network (--network none)
+- Dropped privileges (--cap-drop ALL, --security-opt no-new-privileges, --user 65534:65534)
 - Read-only source mounting (:ro)
-- Memory, CPU, and PID limits
-- Wall-clock timeout kill
+- Memory, swap, CPU, and PID limits
+- Size-capped tmpfs (/tmp:rw,noexec,nosuid,size=64m)
+- Wall-clock timeout kill with container cleanup
+- Safe script delivery via stdin (docker run -i ... python -)
 - Graceful 'sandbox_unavailable' handling when Docker is not active
 """
 
+from __future__ import annotations
+
+import re
 import shutil
 import subprocess
-import tempfile
+import uuid
 from pathlib import Path
 from probe.models import Claim, CheckResult
+
+DEFAULT_IMAGE = "python:3.11-slim"
 
 
 def is_docker_available() -> bool:
@@ -35,7 +43,7 @@ def run_sandbox_repro(
     claim: Claim,
     repo_root: Path | None = None,
     timeout_seconds: int = 15,
-    docker_image: str = "python:3.11-slim",
+    docker_image: str = DEFAULT_IMAGE,
 ) -> CheckResult:
     """Runs a reproduction script inside a hardened, isolated Docker container."""
     if not claim.repro or not claim.repro.strip():
@@ -56,103 +64,158 @@ def run_sandbox_repro(
             details={"reason": "sandbox_unavailable"},
         )
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        script_file = tmp_path / "repro.py"
-        script_file.write_text(claim.repro, encoding="utf-8")
+    container_name = f"probe-sbx-{claim.id}-{uuid.uuid4().hex[:8]}"
 
-        docker_cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--memory",
-            "512m",
-            "--cpus",
-            "1",
-            "--pids-limit",
-            "128",
-            "--read-only",
-            "--tmpfs",
-            "/tmp",
-            "-v",
-            f"{script_file.resolve()}:/app/repro.py:ro",
-        ]
+    # Security controls: no network, drop all caps, unprivileged user, memory swap limit
+    docker_cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-i",
+        "--name",
+        container_name,
+        "--network",
+        "none",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--user",
+        "65534:65534",
+        "--memory",
+        "512m",
+        "--memory-swap",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "128",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=64m",
+    ]
 
-        if repo_root and repo_root.exists():
-            docker_cmd.extend([
-                "-v", f"{repo_root.resolve()}:/workspace:ro",
-                "-e", "PYTHONPATH=/workspace",
-                "-w", "/tmp",
-            ])
-        else:
-            docker_cmd.extend(["-w", "/tmp"])
+    # Mount repository read-only and include both root and src-layout in PYTHONPATH
+    if repo_root and repo_root.exists():
+        docker_cmd.extend([
+            "-v", f"{repo_root.resolve()}:/workspace:ro",
+            "-e", "PYTHONPATH=/workspace:/workspace/src",
+            "-w", "/tmp",
+        ])
+    else:
+        docker_cmd.extend(["-w", "/tmp"])
 
-        docker_cmd.extend([docker_image, "python", "/app/repro.py"])
+    # Deliver script via stdin; avoid mid-triage network pulls with --pull never
+    docker_cmd.extend(["--pull", "never", docker_image, "python", "-"])
 
-        try:
-            res = subprocess.run(
-                docker_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
+    try:
+        res = subprocess.run(
+            docker_cmd,
+            input=claim.repro,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
 
-            stdout = res.stdout.strip()
-            stderr = res.stderr.strip()
-            output_snippet = (stderr or stdout)[-300:] if (stderr or stdout) else "No output"
+        stdout = (res.stdout or "").strip()
+        stderr = (res.stderr or "").strip()
+        output_snippet = (stderr or stdout)[-300:] if (stderr or stdout) else "No output"
 
-            if res.returncode != 0:
-                # Check if failure was caused by missing environment dependencies rather than the claimed bug
-                if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
-                    return CheckResult(
-                        claim_id=claim.id,
-                        checker="sandbox",
-                        outcome="inconclusive",
-                        evidence=f"Missing dependency in sandbox environment: {output_snippet}",
-                        details={
-                            "reason": "missing_dependency",
-                            "exit_code": res.returncode,
-                            "stderr": stderr,
-                        },
-                    )
-
-                # Script crashed as claimed
+        if res.returncode != 0:
+            # 1. Snippet itself has SyntaxError (e.g. pasted traceback or invalid Python)
+            if "SyntaxError" in stderr:
                 return CheckResult(
                     claim_id=claim.id,
                     checker="sandbox",
-                    outcome="supports",
-                    evidence=f"Reproduced failure (exit code {res.returncode}): {output_snippet}",
+                    outcome="inconclusive",
+                    evidence=f"Reproduction snippet contains SyntaxError: {output_snippet}",
+                    details={"reason": "syntax_error", "exit_code": res.returncode, "stderr": stderr},
+                )
+
+            # 2. Snippet has NameError (reporter typo in helper name or import)
+            if "NameError" in stderr:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Reproduction snippet failed with NameError on undefined identifier: {output_snippet}",
+                    details={"reason": "name_error", "exit_code": res.returncode, "stderr": stderr},
+                )
+
+            # 3. Missing dependency in container environment
+            if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence=f"Missing dependency in sandbox environment: {output_snippet}",
                     details={
+                        "reason": "missing_dependency",
                         "exit_code": res.returncode,
-                        "stdout": stdout,
                         "stderr": stderr,
                     },
                 )
-            else:
-                # Script executed cleanly without error
+
+            # 4. Verified failure reproduction
+            return CheckResult(
+                claim_id=claim.id,
+                checker="sandbox",
+                outcome="supports",
+                evidence=f"Reproduced failure (exit code {res.returncode}): {output_snippet}",
+                details={
+                    "exit_code": res.returncode,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                },
+            )
+        else:
+            # Script executed with exit code 0
+            # Exit 0 contradicts only when an assertion failed to trigger or the claim explicitly asserted a crash
+            has_assert = bool(re.search(r"\bassert\b", claim.repro))
+            claims_crash = bool(
+                re.search(
+                    r"\b(?:crash|crashes|exception|traceback|error|raises?|recursionerror|keyerror|valueerror)\b",
+                    (claim.actual or "") + " " + (claim.quote or ""),
+                    re.I,
+                )
+            )
+
+            if has_assert or claims_crash:
                 return CheckResult(
                     claim_id=claim.id,
                     checker="sandbox",
                     outcome="contradicts",
-                    evidence=f"Ran cleanly with exit code 0 (could not reproduce claimed crash)",
-                    details={"exit_code": 0, "stdout": stdout},
+                    evidence="Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
+                    details={"exit_code": 0, "stdout": stdout, "has_assert": has_assert},
+                )
+            else:
+                # Wrong output bugs without assertions cannot be disproven by exit code 0
+                return CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence="Ran cleanly with exit code 0; without assertions or explicit crash claims, return values cannot be disproven automatically.",
+                    details={"exit_code": 0, "stdout": stdout, "reason": "no_assertion_in_repro"},
                 )
 
-        except subprocess.TimeoutExpired:
-            return CheckResult(
-                claim_id=claim.id,
-                checker="sandbox",
-                outcome="inconclusive",
-                evidence=f"Execution timed out after {timeout_seconds}s (infinite loop or hang prevented)",
-                details={"reason": "timeout", "timeout_seconds": timeout_seconds},
-            )
-        except Exception as e:
-            return CheckResult(
-                claim_id=claim.id,
-                checker="sandbox",
-                outcome="inconclusive",
-                evidence=f"Sandbox execution error: {str(e)}",
-                details={"error": str(e)},
-            )
+    except subprocess.TimeoutExpired:
+        # Kill container explicitly so Docker does not leave it running in background
+        try:
+            subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=5)
+        except Exception:
+            pass
+        return CheckResult(
+            claim_id=claim.id,
+            checker="sandbox",
+            outcome="inconclusive",
+            evidence=f"Execution timed out after {timeout_seconds}s (infinite loop or hang prevented)",
+            details={"reason": "timeout", "timeout_seconds": timeout_seconds},
+        )
+    except Exception as e:
+        return CheckResult(
+            claim_id=claim.id,
+            checker="sandbox",
+            outcome="inconclusive",
+            evidence=f"Sandbox execution error: {str(e)}",
+            details={"error": str(e)},
+        )
