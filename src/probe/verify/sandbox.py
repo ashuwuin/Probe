@@ -15,9 +15,11 @@ Enforces:
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -145,6 +147,18 @@ def is_docker_available() -> bool:
         return False
 
 
+def _default_tmp_dir() -> Path:
+    base = os.environ.get("PROBE_TMP_DIR")
+    if base:
+        p = Path(base)
+    elif sys.platform == "darwin":
+        p = Path.home() / ".cache" / "probe" / "tmp"
+    else:
+        p = Path(tempfile.gettempdir())
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def run_sandbox_repro(
     claim: Claim,
     repo_root: Path | None = None,
@@ -206,7 +220,7 @@ def run_sandbox_repro(
         # Mount repository read-only and include both root and src-layout in PYTHONPATH.
         # SECURITY: Always mount a sanitized copy of the repo excluding .env, git, venv, and credentials.
         if repo_root and repo_root.exists():
-            clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-")
+            clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-", dir=_default_tmp_dir())
             clean_workspace = Path(clean_repo_dir.name) / "repo"
             copy_sanitized_repo(repo_root, clean_workspace)
             docker_cmd.extend([

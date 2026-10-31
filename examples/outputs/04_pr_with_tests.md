@@ -15,6 +15,6 @@
 </details>
 
 ---
-Expected overall verdict: `confirmed` · Status: **matches expected** · Verdicts from: baseline rules (probe.verdict not available yet)
+Expected overall verdict: `confirmed` · Status: **matches expected** · Verdicts from: probe.verdict.evaluate_claim_verdict
 
 _Automated triage; a maintainer makes the final call._

@@ -3,7 +3,7 @@
   "title": "Security: parse_url_v2() leaks proxy credentials",
   "source": "[psf/requests@3c7baaa](https://github.com/psf/requests/tree/3c7baaa05ab4aa49cc819ce3a819d260de19c157)",
   "provenance": "synthetic report naming a function that does not exist, checked against the real psf/requests codebase",
-  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "verdict_source": "probe.verdict.evaluate_claim_verdict",
   "overall": "invalid",
   "expected_overall": "invalid",
   "expected_claim_verdicts": {

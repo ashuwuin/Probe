@@ -883,10 +883,12 @@
           "claim_id": "c1",
           "checker": "sandbox",
           "outcome": "inconclusive",
-          "evidence": "sandbox_unavailable: Docker daemon is not active on host",
+          "evidence": "Missing dependency in sandbox environment: Traceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nModuleNotFoundError: No module named 'chanfig'",
           "line_number": null,
           "details": {
-            "reason": "sandbox_unavailable"
+            "reason": "missing_dependency",
+            "exit_code": 1,
+            "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nModuleNotFoundError: No module named 'chanfig'"
           }
         }
       ],
@@ -897,7 +899,7 @@
         "claim_id": "c1",
         "status": "uncertain",
         "confidence": "low",
-        "evidence": "Docker sandbox unavailable to verify execution behavior safely",
+        "evidence": "Missing dependency in sandbox environment: Traceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nModuleNotFoundError: No module named 'chanfig'",
         "quote": "print does not work well with DefaultDict"
       },
       {

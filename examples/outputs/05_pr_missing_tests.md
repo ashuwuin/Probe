@@ -7,7 +7,7 @@
 | # | Claim (quoted) | Verdict | Evidence |
 |---|---|---|---|
 | c1 | "adds unit tests for apply_discount" | ❌ `invalid` (medium) | The PR changes 1 file(s) but none is a test file, and the diff adds no test functions. |
-| c2 | "Fixes the discount calculation in `apply_discount()`" | ⚠️ `uncertain` (low) | Not enough evidence to decide. The PR modifies `shop/billing.py`, which the linked issue names. This shows the PR touches the reported code, not that the fix is correct. |
+| c2 | "Fixes the discount calculation in `apply_discount()`" | ⚠️ `uncertain` (medium) | PR touches reported target (The PR modifies `shop/billing.py`, which the linked issue names. This shows the PR touches the reported code, not that the fix is correct.), but fix correctness requires execution testing. |
 
 <details><summary>Checks that ran</summary>
 
@@ -17,6 +17,6 @@
 </details>
 
 ---
-Expected overall verdict: `uncertain` · Status: **matches expected** · Verdicts from: baseline rules (probe.verdict not available yet)
+Expected overall verdict: `uncertain` · Status: **matches expected** · Verdicts from: probe.verdict.evaluate_claim_verdict
 
 _Automated triage; a maintainer makes the final call._

@@ -1,6 +1,6 @@
 # Probe evaluation results
 
-_Generated 2026-10-31 20:41 UTC · mode: **extracted** · verdicts: **probe.verdict.evaluate_claim_verdict (overall: probe.verdict.get_overall_verdict)**_
+_Generated 2026-10-31 21:30 UTC · mode: **extracted** · verdicts: **probe.verdict.evaluate_claim_verdict (overall: probe.verdict.get_overall_verdict)**_
 
 Each case is a real, closed GitHub issue. The maintainer's label is the reference answer; labels are signals, not infallible ground truth. Every case is checked against the commit that was current when the issue was opened.
 
@@ -51,7 +51,7 @@ Each case is a real, closed GitHub issue. The maintainer's label is the referenc
 | [poetry-7465](https://github.com/python-poetry/poetry/issues/7465) | `invalid` | — `uncertain` | c1: no applicable check; c2: no applicable check; c3: no applicable check |
 | [poetry-9961](https://github.com/python-poetry/poetry/issues/9961) | `confirmed` | — `uncertain` | c1: no applicable check; c2: static_ast=inconclusive (unsupported_language); c3: static_ast=inconclusive (unsupported_language) |
 | [rich-1630](https://github.com/Textualize/rich/issues/1630) | `cannot-reproduce` | — `uncertain` | c1: no applicable check; c2: static_ast=supports (symbol_found) |
-| [rich-2988](https://github.com/Textualize/rich/issues/2988) | `cannot-reproduce` | — `uncertain` | c1: sandbox=inconclusive (sandbox_unavailable); c2: no applicable check |
+| [rich-2988](https://github.com/Textualize/rich/issues/2988) | `cannot-reproduce` | — `uncertain` | c1: sandbox=inconclusive (missing_dependency); c2: no applicable check |
 | [textual-2178](https://github.com/Textualize/textual/issues/2178) | `cannot-reproduce` | — `uncertain` | c1: no applicable check; c2: static_ast=supports (symbol_found); c3: static_ast=supports (symbol_found); c4: no applicable check; c5: no applicable check; c6: no applicable check |
 | [textual-2863](https://github.com/Textualize/textual/issues/2863) | `cannot-reproduce` | — `uncertain` | c1: no applicable check; c2: no applicable check; c3: static_ast=supports (symbol_found) |
 

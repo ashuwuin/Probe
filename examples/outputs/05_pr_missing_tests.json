@@ -3,7 +3,7 @@
   "title": "Fix discount calculation",
   "source": "`examples/repos/shop` (demo repo)",
   "provenance": "synthetic pull request against the demo repo: it claims tests but changes only shop/billing.py",
-  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "verdict_source": "probe.verdict.evaluate_claim_verdict",
   "overall": "uncertain",
   "expected_overall": "uncertain",
   "expected_claim_verdicts": {
@@ -84,8 +84,8 @@
     {
       "claim_id": "c2",
       "status": "uncertain",
-      "confidence": "low",
-      "evidence": "Not enough evidence to decide. The PR modifies `shop/billing.py`, which the linked issue names. This shows the PR touches the reported code, not that the fix is correct.",
+      "confidence": "medium",
+      "evidence": "PR touches reported target (The PR modifies `shop/billing.py`, which the linked issue names. This shows the PR touches the reported code, not that the fix is correct.), but fix correctness requires execution testing.",
       "quote": "Fixes the discount calculation in `apply_discount()`"
     }
   ]

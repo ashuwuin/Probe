@@ -1,6 +1,6 @@
 # Probe evaluation results
 
-_Generated 2026-10-31 20:36 UTC · mode: **gold** · verdicts: **probe.verdict.evaluate_claim_verdict (overall: probe.verdict.get_overall_verdict)**_
+_Generated 2026-10-31 21:22 UTC · mode: **gold** · verdicts: **probe.verdict.evaluate_claim_verdict (overall: probe.verdict.get_overall_verdict)**_
 
 Each case is a real, closed GitHub issue. The maintainer's label is the reference answer; labels are signals, not infallible ground truth. Every case is checked against the commit that was current when the issue was opened.
 

@@ -3,7 +3,7 @@
   "title": "Raise InvalidUrl if host starts with '.' character.",
   "source": "[psf/requests@658c10e](https://github.com/psf/requests/tree/658c10e84a461e5298199f20f17b510b90ac478a)",
   "provenance": "real merged pull request psf/requests#5414 (description and diff copied from GitHub)",
-  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "verdict_source": "probe.verdict.evaluate_claim_verdict",
   "overall": "confirmed",
   "expected_overall": "confirmed",
   "expected_claim_verdicts": {
