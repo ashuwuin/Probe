@@ -1,5 +1,258 @@
 [
   {
+    "id": "checkable-01-symbol",
+    "label": "invalid",
+    "prediction": "invalid",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "security_vuln",
+        "file": "src/requests/utils.py",
+        "symbol": "parse_url_v2",
+        "version": null,
+        "expected": null,
+        "actual": "user:password appears in debug logs",
+        "repro": null,
+        "issue_number": null,
+        "quote": "`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "contradicts",
+          "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+          "line_number": null,
+          "details": {
+            "reason": "symbol_not_found",
+            "confidence": "high",
+            "files_scanned": 37,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "invalid",
+        "confidence": "high",
+        "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+        "quote": "`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them"
+      }
+    ]
+  },
+  {
+    "id": "checkable-02-pr-tests",
+    "label": "confirmed",
+    "prediction": "confirmed",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "pr_adds_tests",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "pr_diff",
+          "outcome": "supports",
+          "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py; new tests include `def test_invalid_url():`.",
+          "line_number": null,
+          "details": {
+            "reason": "tests_added",
+            "test_files": [
+              "tests/test_requests.py"
+            ],
+            "added_tests": [
+              "def test_invalid_url():"
+            ],
+            "confidence": "high"
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py; new tests include `def test_invalid_url():`.",
+        "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`."
+      }
+    ]
+  },
+  {
+    "id": "checkable-03-pr-no-tests",
+    "label": "invalid",
+    "prediction": "invalid",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "pr_adds_tests",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "I have added unit tests for the helper methods."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "pr_diff",
+          "outcome": "contradicts",
+          "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
+          "line_number": null,
+          "details": {
+            "reason": "no_test_files",
+            "changed_files": [
+              "requests/utils.py"
+            ],
+            "confidence": "medium",
+            "note": "Tests in non-standard locations are not detected."
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "invalid",
+        "confidence": "medium",
+        "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
+        "quote": "I have added unit tests for the helper methods."
+      }
+    ]
+  },
+  {
+    "id": "checkable-04-demo-repro",
+    "label": "confirmed",
+    "prediction": "confirmed",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "shop/billing.py",
+        "symbol": "apply_discount",
+        "version": null,
+        "expected": "90.0",
+        "actual": "0.0",
+        "repro": "from shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)\n",
+        "issue_number": null,
+        "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`apply_discount` is defined in `shop/billing.py` at line 6 (function).",
+          "line_number": 6,
+          "details": {
+            "file": "shop/billing.py",
+            "kind": "function",
+            "qualname": "apply_discount",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        },
+        {
+          "claim_id": "c1",
+          "checker": "sandbox",
+          "outcome": "supports",
+          "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0",
+          "line_number": null,
+          "details": {
+            "reason": "reproduced",
+            "exit_code": 1,
+            "exception": "AssertionError",
+            "stdout": "",
+            "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0"
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0",
+        "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0."
+      }
+    ]
+  },
+  {
+    "id": "checkable-05-demo-clean",
+    "label": "cannot-reproduce",
+    "prediction": "cannot-reproduce",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": "ValueError: amount must be non-negative",
+        "repro": "from shop.billing import format_price\n\nprint(format_price(-5))\n",
+        "issue_number": null,
+        "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "sandbox",
+          "outcome": "contradicts",
+          "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
+          "line_number": null,
+          "details": {
+            "reason": "ran_clean",
+            "exit_code": 0,
+            "stdout": "-5.00 INR",
+            "has_assert": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "cannot-reproduce",
+        "confidence": "medium",
+        "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
+        "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page."
+      }
+    ]
+  },
+  {
     "id": "loguru-1448",
     "label": "invalid",
     "prediction": "uncertain",

@@ -54,7 +54,10 @@ def test_real_eval_cases_are_valid():
     assert len(cases) >= 10
     assert {c.label for c in cases} == {"confirmed", "cannot-reproduce", "invalid"}
     for c in cases:
-        assert c.url.startswith("https://github.com/")
+        if c.synthetic:
+            assert c.url.startswith("cases/") or c.url.startswith("https://github.com/")
+        else:
+            assert c.url.startswith("https://github.com/")
         assert c.gold_claims, c.id
         ids = {cl.id for cl in c.gold_claims}
         assert set(c.expected_outcomes) <= ids, c.id
