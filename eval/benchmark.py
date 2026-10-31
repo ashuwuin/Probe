@@ -13,7 +13,10 @@ Writes eval/RESULTS.md and eval/results.json.
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +43,19 @@ def _extract(case_text: str, *, is_pull_request: bool):
     return extract_claims(case_text, is_pull_request=is_pull_request)
 
 
+def _model_digest(model: str) -> str | None:
+    """Ollama's ID for ``model`` (from `ollama list`), so results name the exact weights used."""
+    try:
+        out = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in (model, f"{model}:latest"):
+            return parts[1]
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cases", type=Path, default=HERE / "cases")
@@ -57,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     _, overall_source = _load_overall_fn()
     verdict_source = f"{verdict_source} (overall: {overall_source})"
     results = []
+    extraction_meta: dict[str, dict] = {}
     with GitHubClient() as gh:
         for case in cases:
             if case.local_repo:
@@ -81,19 +98,29 @@ def main(argv: list[str] | None = None) -> int:
 
             claims, method = None, "gold"
             if args.mode == "extracted" and root is not None:
-                text = case.text
+                text, text_source = case.text, "case_text"
                 if not text and not case.synthetic:
                     try:
                         issue = gh.get_issue(owner, repo, number)
-                        text = f"{issue.title}\n\n{issue.body}"
+                        text, text_source = f"{issue.title}\n\n{issue.body}", "github_issue"
                     except Exception:
                         if case.note:
-                            text = f"{case.id}\n\n{case.note}"
+                            text, text_source = f"{case.id}\n\n{case.note}", "case_note_fallback"
                         elif case.gold_claims:
-                            text = "\n\n".join(c.quote for c in case.gold_claims)
+                            text, text_source = "\n\n".join(c.quote for c in case.gold_claims), "gold_quotes_fallback"
                 if text:
+                    started = time.perf_counter()
                     response = _extract(text, is_pull_request=is_pr)
                     claims, method = response.claims, response.method
+                    extraction_meta[case.id] = {
+                        "method": response.method,
+                        "model": response.model,
+                        "seconds": round(time.perf_counter() - started, 2),
+                        "dropped_claims": response.dropped_claims,
+                        "is_pull_request": is_pr,
+                        "text_source": text_source,
+                        "text": text,
+                    }
 
             result = evaluate_case(case, root, claims=claims, decide=decide, error=error, extraction_method=method)
             results.append(result)
@@ -102,7 +129,15 @@ def main(argv: list[str] | None = None) -> int:
     metrics = compute_metrics(results)
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     args.out.write_text(render_markdown(results, metrics, mode=args.mode, verdict_source=verdict_source, generated=generated))
-    args.json.write_text(results_to_json(results) + "\n")
+    payload = json.loads(results_to_json(results))
+    if extraction_meta:
+        models = {m["model"] for m in extraction_meta.values()}
+        digests = {m: _model_digest(m) for m in models}
+        for row in payload:
+            meta = extraction_meta.get(row["id"])
+            if meta:
+                row["extraction"] = {**meta, "model_digest": digests.get(meta["model"]), "temperature": 0}
+    args.json.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
 
     agree, checks = metrics.check_agreement
     print(
