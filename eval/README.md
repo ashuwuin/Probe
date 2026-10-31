@@ -71,14 +71,13 @@ On the checkable cases group, Probe achieves **100% decided coverage** (5/5) and
 ### Gold Claims vs. LLM Extraction (`qwen3:8b`)
 
 Probe supports two evaluation modes:
-1. **Gold Mode (`--mode gold`)**: Evaluates against human-annotated ground-truth claims in [`eval/RESULTS.md`](RESULTS.md).
+1. **Gold Mode (`--mode gold`)**: Evaluates against human-annotated ground-truth claims in [`RESULTS.md`](RESULTS.md).
    - **Checker Agreement**: 16/16 (100%) in gold mode.
    - **Coverage on Checkable Cases**: 5/5 (100%), with 100% accuracy on decided cases.
-   - **Wrong `invalid` Verdicts**: 0 across all 17 cases.
-2. **Extracted Mode (`--mode extracted`)**: Evaluates the full end-to-end pipeline using `qwen3:8b` via Ollama on localhost to extract claims from raw issue/PR text in [`eval/RESULTS_extracted.md`](RESULTS_extracted.md).
+   - **Wrong `invalid` Verdicts**: 0 observed on 17 cases.
+2. **Extracted Mode (`--mode extracted`)**: Evaluates the full end-to-end pipeline using `qwen3:8b` via Ollama on localhost to extract claims from raw issue/PR text in [`RESULTS_extracted.md`](RESULTS_extracted.md).
    - **Accuracy on Decided Cases**: 5/5 (100%) on checkable cases.
-   - **Wrong `invalid` Verdicts**: 0 across all 17 cases.
+   - **Wrong `invalid` Verdicts**: 0 observed on 17 cases.
    - **Overall Verdict Agreement**: 17/17 (100% identical overall verdicts between gold and extracted mode).
-   - **Claim Counts (Finer Splitting)**: 44 extracted claims by `qwen3:8b` vs. 19 hand-written gold claims across the 17 cases, reflecting finer-grained splitting of multi-assertion paragraphs and extraction of secondary references.
-   - **Zero Wrong Invalid**: 0 wrong `invalid` verdicts across all 17 cases in both gold and extracted modes. Probe's defense-in-depth pipeline (schema validation, verbatim quote verification against source text, external dependency resolution, and strict evidence thresholds) ensures that extracted secondary claims never trigger false invalid verdicts.
-   - Further per-claim precision/recall metrics and comparison against the backup-parser baseline are tracked in `eval/compare_extraction.py` and `eval/EXTRACTION.md`.
+   - **Claim Counts**: 44 extracted claims by `qwen3:8b` vs. 19 hand-written gold claims across the 17 cases (finer-grained splitting of multi-assertion paragraphs).
+   - Detailed per-claim precision/recall metrics, field accuracy, and guardrail drops are documented in [`EXTRACTION.md`](EXTRACTION.md).
