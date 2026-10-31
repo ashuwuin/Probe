@@ -9,7 +9,7 @@ Team Zig1: Ashwin Anand (@ashuwuin, repo owner), Kaashvi Saini (@Kaashviw3spaces
 - **PRs:** always use `.github/pull_request_template.md` as the PR body. Tick "Claude Code" when it helped, and tick
   "All unit tests pass" only after pytest actually ran in this session.
 - **Ask the user before** pushing a branch, opening a PR or merging. Never post comments or reviews on GitHub.
-- **Never** write machine/task-split labels ("Mac 1", "Mac 2", "this Mac", "integrator") in PRs, commits or code.
+- **Never** write internal machine or task-split labels in PRs, commits or code; name modules or people instead.
   Name modules or people instead.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **Allowed models:** open-weight only (Qwen, Llama, Gemma, Mistral, DeepSeek, Phi). Never call closed/cloud AI APIs.
