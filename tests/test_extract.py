@@ -1129,3 +1129,29 @@ def test_no_repro_attached_when_blocks_are_ambiguous_or_not_code():
     traceback_only = "apply_discount returns the wrong price\n\n```\nTraceback (most recent call last):\n  File \"a.py\", line 1\nValueError: x\n```\n"
     kept, _ = _apply_guardrails(raw, traceback_only, is_pull_request=False)
     assert kept[0].repro is None
+
+
+
+def test_repro_goes_only_to_the_nearest_claim_before_the_block():
+    raw = [
+        _LLMClaim(type="bug_behavior", quote="apply_discount returns the wrong price"),
+        _LLMClaim(type="bug_behavior", quote="returns 0.0 for a 10% discount on 100 instead of 90.0."),
+        _LLMClaim(type="bug_behavior", quote="Expected: 90.0. Actual: AssertionError: 0.0"),  # after the block
+    ]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert [c.repro is not None for c in kept] == [False, True, False]
+
+
+def test_repro_not_attached_when_no_claim_introduces_the_block():
+    raw = [_LLMClaim(type="bug_behavior", quote="Expected: 90.0. Actual: AssertionError: 0.0")]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert kept[0].repro is None
+
+
+def test_repro_attached_to_the_only_bug_claim_without_one():
+    raw = [
+        _LLMClaim(type="bug_behavior", quote="apply_discount returns the wrong price"),
+        _LLMClaim(type="symbol_exists", quote="apply_discount() in shop/billing.py", symbol="apply_discount"),
+    ]
+    kept, _ = _apply_guardrails(raw, _ISSUE, is_pull_request=False)
+    assert [c.repro is not None for c in kept] == [True, False]

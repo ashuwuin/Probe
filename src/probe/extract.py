@@ -404,23 +404,32 @@ def _apply_guardrails(
 
 
 def _attach_single_repro(claims: list[Claim], text: str) -> list[Claim]:
-    """Give bug/security claims the report's repro when the model left it empty.
+    """Give ONE bug/security claim the report's repro when the model left it empty.
 
-    Small models often skip the `repro` field. When the report contains exactly ONE
-    usable fenced Python block, that block is unambiguous: it is attached verbatim (it is
-    the reporter's own code, never model-written). With zero or several blocks, nothing
-    is attached.
+    Small models often skip the `repro` field. The block is attached verbatim (the
+    reporter's own code, never model-written) only when the report has exactly ONE usable
+    fenced Python block, and only to ONE claim: the bug/security claim without a repro
+    whose quote appears closest BEFORE that block (the sentence that introduces it).
+    Sharing one script across several claims could let an unrelated claim naming the
+    same exception be "confirmed" by another claim's repro, so nobody else gets it.
     """
-    blocks = [m.group(2).strip() for m in _BLOCK_RE.finditer(text)]
-    usable = [b for b in blocks if _is_usable_repro(b)]
+    blocks = [(m.start(), m.group(2).strip()) for m in _BLOCK_RE.finditer(text)]
+    usable = [(pos, b) for pos, b in blocks if _is_usable_repro(b)]
     if len(usable) != 1:
         return claims
-    return [
-        c.model_copy(update={"repro": usable[0]})
-        if c.type in ("bug_behavior", "security_vuln") and not c.repro
-        else c
-        for c in claims
-    ]
+    block_start, block = usable[0]
+    best, best_pos = None, -1
+    for i, c in enumerate(claims):
+        if c.type not in ("bug_behavior", "security_vuln") or c.repro:
+            continue
+        pos = text.find(c.quote)
+        if 0 <= pos < block_start and pos > best_pos:
+            best, best_pos = i, pos
+    if best is None:
+        return claims
+    claims = list(claims)
+    claims[best] = claims[best].model_copy(update={"repro": block})
+    return claims
 
 
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
