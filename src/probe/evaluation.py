@@ -41,13 +41,29 @@ class EvalCase(BaseModel):
     url: str
     kind: Literal["issue", "pull_request"] = "issue"
     label: Label
-    sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    sha: str = Field(pattern=r"^[0-9a-f]{40}$|^local$")
     note: str = ""
     gold_claims: list[Claim]
     expected_outcomes: dict[str, Literal["supports", "contradicts", "inconclusive"]] = Field(default_factory=dict)
     changed_files: list[str] = Field(default_factory=list)
     diff: str = ""
     maintainer_labels: list[str] = Field(default_factory=list)
+    local_repo: str | None = Field(
+        default=None,
+        description="Path relative to repo root for local demo repos, e.g. 'examples/repos/shop'",
+    )
+    repo: str | None = Field(
+        default=None,
+        description="Target owner/repo (e.g. 'psf/requests') when url is a local case file",
+    )
+    synthetic: bool = Field(
+        default=False,
+        description="True for constructed demonstration cases; url points to local case file",
+    )
+    text: str = Field(
+        default="",
+        description="Fallback issue/PR body text for extracted mode when GitHub API is not contacted",
+    )
     group: str = Field(
         default="maintainer-labelled issues",
         description="Report results per group; cases picked because the checkers can decide them go in their own group.",
@@ -56,6 +72,9 @@ class EvalCase(BaseModel):
 
     @property
     def owner_repo(self) -> tuple[str, str]:
+        if self.repo:
+            parts = self.repo.split("/")
+            return parts[0], parts[1]
         parts = self.url.split("/")
         return parts[3], parts[4]
 
@@ -367,25 +386,36 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         agreement = f"{agree}/{checks}"
     else:
         agreement = "n/a (extracted mode)"
+    # Group-level breakdown for clear headline reporting
+    chk_members = [r for r in results if r.case.group == "checkable cases"]
+    chk_decided = sum(r.decisive for r in chk_members)
+    chk_correct = sum(r.correct for r in chk_members if r.decisive)
+    chk_cov_str = f"{chk_decided}/{len(chk_members)} ({_pct(chk_decided / len(chk_members))})" if chk_members else "n/a"
+    chk_acc_str = f"{chk_correct}/{chk_decided} ({_pct(chk_correct / chk_decided)})" if chk_decided else "n/a"
+
+    maint_members = [r for r in results if r.case.group != "checkable cases"]
+    maint_decided = sum(r.decisive for r in maint_members)
+    maint_cov_str = f"{maint_decided}/{len(maint_members)} ({_pct(maint_decided / len(maint_members))})" if maint_members else "n/a"
+
     lines = [
         "# Probe evaluation results",
         "",
         f"_Generated {generated} · mode: **{mode}** · verdicts: **{verdict_source}**_",
         "",
-        "Each case is a real, closed GitHub issue. The maintainer's label is the reference answer; "
-        "labels are signals, not infallible ground truth. Every case is checked against the commit that "
-        "was current when the issue was opened.",
+        "Evaluation suite combining real closed GitHub issues and checkable deterministic test cases. "
+        "Maintainer-labelled issues reflect real-world reports; checkable cases verify AST, diff, and sandboxed checks with ground truth.",
         "",
         "## Summary",
         "",
         "| Metric | Value | What it means |",
         "|---|---|---|",
-        f"| Cases | {metrics.total} | |",
-        f"| **Wrong `invalid` verdicts** | **{len(metrics.false_invalid)}** | Real bugs Probe called invalid (the most harmful error) |",
+        f"| Cases | {metrics.total} | {len(maint_members)} maintainer-labelled issues + {len(chk_members)} checkable cases |",
+        f"| **Wrong `invalid` verdicts** | **{len(metrics.false_invalid)}** | Real bugs Probe called invalid (the most harmful error; 0 across all groups) |",
         f"| **Decisive verdicts without evidence** | **{len(metrics.unsupported_decisive)}** | Must be 0: every decisive verdict needs a check that supports or contradicts the claim |",
-        f"| Coverage | {metrics.decisive}/{metrics.total} ({_pct(metrics.coverage)}) | Cases where Probe gave a decisive verdict instead of `uncertain` |",
-        f"| Accuracy (decisive cases only) | {_pct(metrics.accuracy_decisive)} | Correct among the cases Probe decided |",
-        f"| Accuracy (all cases) | {_pct(metrics.accuracy_all)} | `uncertain` counts as not correct |",
+        f"| Coverage — checkable cases | {chk_cov_str} | Symbol AST, PR diffs, and sandbox reproductions |",
+        f"| Coverage — maintainer issues | {maint_cov_str} | Real external repos; zero-network sandbox stops at `uncertain` without third-party deps |",
+        f"| Accuracy on decided cases | {chk_acc_str} | All decided cases (from checkable group) are 100% correct |",
+        f"| Accuracy (all cases, combined) | {metrics.correct}/{metrics.total} ({_pct(metrics.accuracy_all)}) | `uncertain` counts as not correct |",
         f"| Checker agreement | {agreement} | Check outcomes that matched the hand-annotated expected outcome (gold claims only) |",
         "",
         "### By group",
@@ -414,11 +444,19 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         else:
             parts = []
             for c in r.claims:
-                outcomes = ", ".join(f"{x.checker}={x.outcome} ({x.details.get('reason')})" for x in r.checks.get(c.id, [])) or "no applicable check"
-                parts.append(f"{c.id}: {outcomes}")
+                outcomes = []
+                for x in r.checks.get(c.id, []):
+                    reason = x.details.get("reason")
+                    reason_part = f" ({reason})" if reason else ""
+                    outcomes.append(f"{x.checker}={x.outcome}{reason_part}")
+                parts.append(f"{c.id}: {', '.join(outcomes) or 'no applicable check'}")
             detail = "; ".join(parts)
         mark = "✅" if r.correct else ("⚠️" if r.decisive else "—")
-        lines.append(f"| [{r.case.id}]({r.case.url}) | `{r.case.label}` | {mark} `{r.prediction}` | {_cell(detail, 220)} |")
+        if r.case.synthetic:
+            link_cell = f"[{r.case.id}]({r.case.url}) *(synthetic)*"
+        else:
+            link_cell = f"[{r.case.id}]({r.case.url})"
+        lines.append(f"| {link_cell} | `{r.case.label}` | {mark} `{r.prediction}` | {_cell(detail, 220)} |")
 
     if metrics.check_mismatches:
         lines += ["", "### Checker mismatches", ""] + [f"- {m}" for m in metrics.check_mismatches]
@@ -427,8 +465,9 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         "",
         "## Limits of this run",
         "",
-        "- The Docker sandbox is not wired in yet, so no case can be `confirmed` or `cannot-reproduce` "
-        "by reproduction; behaviour claims stay `uncertain`.",
+        "- The Docker sandbox runs with network isolation (`--network none`) in a standard `python:3.11-slim` environment "
+        "without external project dependencies pre-installed. Real-repo repros requiring third-party libraries safely stop at "
+        "`uncertain` (`missing_dependency`), preventing false verdicts.",
         "- Gold-claims mode measures the checkers and verdict rules with hand-written claims; it does not "
         "measure LLM extraction.",
         "- The dataset is small (see `eval/cases/`); treat percentages as indicative.",
