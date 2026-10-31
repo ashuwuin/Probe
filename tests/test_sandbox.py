@@ -19,8 +19,19 @@ def test_sandbox_unavailable_when_docker_inactive():
     with patch("probe.verify.sandbox.is_docker_available", return_value=False):
         res = run_sandbox_repro(claim)
         assert res.outcome == "inconclusive"
-        assert res.details.get("reason") == "sandbox_unavailable"
+        assert res.details.get("reason") in ("sandbox_unavailable", "image_unavailable")
         assert "sandbox_unavailable" in res.evidence
+
+
+def test_sandbox_custom_image_passed_and_checked():
+    claim = Claim(id="c1", type="bug_behavior", repro="print(1/0)", quote="crashes with ZeroDivisionError")
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=False) as mock_avail:
+        res = run_sandbox_repro(claim, docker_image="my-custom-python:3.12")
+        mock_avail.assert_called_once_with("my-custom-python:3.12")
+        assert res.outcome == "inconclusive"
+        assert "sandbox_unavailable" in res.evidence
+        assert res.details.get("image") == "my-custom-python:3.12"
 
 
 def test_sandbox_reproduces_failure():

@@ -3,13 +3,13 @@
   "title": "format_price crashes on negative amounts",
   "source": "`examples/repos/shop` (demo repo)",
   "provenance": "synthetic issue against the demo repo (format_price(-5) actually returns '-5.00 INR')",
-  "verdict_source": "baseline rules (probe.verdict not available yet)",
-  "overall": "uncertain",
+  "verdict_source": "probe.verdict.evaluate_claim_verdict",
+  "overall": "cannot-reproduce",
   "expected_overall": "cannot-reproduce",
   "expected_claim_verdicts": {
     "c1": "cannot-reproduce"
   },
-  "status": "pending sandbox",
+  "status": "matches expected",
   "claims": [
     {
       "id": "c1",
@@ -42,15 +42,28 @@
           "matches": 1,
           "other_locations": []
         }
+      },
+      {
+        "claim_id": "c1",
+        "checker": "sandbox",
+        "outcome": "contradicts",
+        "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
+        "line_number": null,
+        "details": {
+          "reason": "ran_clean",
+          "exit_code": 0,
+          "stdout": "-5.00 INR",
+          "has_assert": false
+        }
       }
     ]
   },
   "verdicts": [
     {
       "claim_id": "c1",
-      "status": "uncertain",
-      "confidence": "low",
-      "evidence": "Not enough evidence to decide. `format_price` is defined in `shop/billing.py` at line 11 (function).",
+      "status": "cannot-reproduce",
+      "confidence": "medium",
+      "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
       "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page."
     }
   ]

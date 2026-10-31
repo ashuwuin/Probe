@@ -37,6 +37,10 @@ jobs:
             --exclude-dir={.git,.venv,venv} \
             --exclude=".env.example"
 
+      - name: Pull Sandbox Docker Image
+        run: |
+          docker pull python:3.11-slim || true
+
       - name: Run Pytest Suite
         run: |
           pytest

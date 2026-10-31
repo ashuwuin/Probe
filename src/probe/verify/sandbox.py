@@ -15,9 +15,11 @@ Enforces:
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -129,8 +131,8 @@ def _exc_matches(name1: str | None, name2: str | None) -> bool:
     return name1.split(".")[-1] == name2.split(".")[-1]
 
 
-def is_docker_available() -> bool:
-    """Checks whether the Docker CLI is installed and the Docker daemon is running."""
+def is_docker_available(image: str = DEFAULT_IMAGE) -> bool:
+    """Checks whether Docker CLI is installed, the daemon is running, and the sandbox image is present."""
     if not shutil.which("docker"):
         return False
     try:
@@ -140,9 +142,29 @@ def is_docker_available() -> bool:
             stderr=subprocess.DEVNULL,
             timeout=3,
         )
-        return res.returncode == 0
+        if res.returncode != 0:
+            return False
+        img_res = subprocess.run(
+            ["docker", "image", "inspect", image],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        )
+        return img_res.returncode == 0
     except Exception:
         return False
+
+
+def _default_tmp_dir() -> Path:
+    base = os.environ.get("PROBE_TMP_DIR")
+    if base:
+        p = Path(base)
+    elif sys.platform == "darwin":
+        p = Path.home() / ".cache" / "probe" / "tmp"
+    else:
+        p = Path(tempfile.gettempdir())
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def run_sandbox_repro(
@@ -161,13 +183,23 @@ def run_sandbox_repro(
             details={"reason": "no_repro_snippet"},
         )
 
-    if not is_docker_available():
+    if not is_docker_available(docker_image):
+        reason = "sandbox_unavailable"
+        evidence = "sandbox_unavailable: Docker daemon is not active on host"
+        try:
+            info_res = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            if info_res.returncode == 0:
+                reason = "image_unavailable"
+                evidence = f"sandbox_unavailable: Docker image '{docker_image}' is not available locally"
+        except Exception:
+            pass
+
         return CheckResult(
             claim_id=claim.id,
             checker="sandbox",
             outcome="inconclusive",
-            evidence="sandbox_unavailable: Docker daemon is not active on host",
-            details={"reason": "sandbox_unavailable"},
+            evidence=evidence,
+            details={"reason": reason, "image": docker_image},
         )
 
     container_name = f"probe-sbx-{claim.id}-{uuid.uuid4().hex[:8]}"
@@ -206,9 +238,26 @@ def run_sandbox_repro(
         # Mount repository read-only and include both root and src-layout in PYTHONPATH.
         # SECURITY: Always mount a sanitized copy of the repo excluding .env, git, venv, and credentials.
         if repo_root and repo_root.exists():
-            clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-")
+            clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-", dir=_default_tmp_dir())
             clean_workspace = Path(clean_repo_dir.name) / "repo"
             copy_sanitized_repo(repo_root, clean_workspace)
+            # Ensure workspace directory and files are readable by container user 65534 on Linux hosts
+            try:
+                os.chmod(clean_repo_dir.name, 0o755)
+                os.chmod(clean_workspace, 0o755)
+                for root_dir, dirs, files in os.walk(clean_workspace):
+                    for d in dirs:
+                        try:
+                            os.chmod(os.path.join(root_dir, d), 0o755)
+                        except OSError:
+                            pass
+                    for f in files:
+                        try:
+                            os.chmod(os.path.join(root_dir, f), 0o644)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
             docker_cmd.extend([
                 "-v", f"{clean_workspace.resolve()}:/workspace:ro",
                 "-e", "PYTHONPATH=/workspace:/workspace/src",
@@ -422,6 +471,7 @@ def run_sandbox_repro(
                 outcome="supports",
                 evidence=f"Reproduced failure ({actual_exc}): {output_snippet}",
                 details={
+                    "reason": "reproduced",
                     "exit_code": res.returncode,
                     "exception": actual_exc,
                     "stdout": stdout,
@@ -456,7 +506,7 @@ def run_sandbox_repro(
                     checker="sandbox",
                     outcome="contradicts",
                     evidence="Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
-                    details={"exit_code": 0, "stdout": stdout, "has_assert": has_assert},
+                    details={"reason": "ran_clean", "exit_code": 0, "stdout": stdout, "has_assert": has_assert},
                 )
             else:
                 # Wrong output bugs without assertions cannot be disproven by exit code 0
