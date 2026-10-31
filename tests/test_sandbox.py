@@ -332,3 +332,81 @@ def test_sandbox_final_line_exception_not_fooled_by_message():
     stderr = "Traceback (most recent call last):\n  File 'x.py', line 1\nValueError: expected KeyError but got none"
     assert _extract_final_exception(stderr) == "ValueError"
 
+
+def test_sandbox_expected_error_empty_field_does_not_confirm_false_report():
+    # When claim.expected is empty ("") or None, but quote says "parse('') should raise ValueError but returns {}"
+    # The code correctly raises ValueError. Probe must NEVER mark this as confirmed (supports).
+    claim = Claim(
+        id="c1",
+        type="bug_behavior",
+        repro="parse('')",
+        expected="",
+        actual="returns {}",
+        quote="parse('') should raise ValueError but returns {}",
+    )
+
+    mock_run = MagicMock()
+    mock_run.returncode = 1
+    mock_run.stdout = ""
+    mock_run.stderr = "ValueError: input cannot be empty"
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True):
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "inconclusive"
+            assert res.outcome != "supports"
+            assert res.details.get("reason") in ("expected_exception_raised", "no_claimed_error")
+
+
+def test_sandbox_module_prefixed_exception_recognized():
+    # Module-prefixed exceptions like json.decoder.JSONDecodeError must be extracted and matched
+    from probe.verify.sandbox import _extract_final_exception
+    stderr = "Traceback (most recent call last):\n  File 'x.py', line 1\njson.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+    assert _extract_final_exception(stderr) == "json.decoder.JSONDecodeError"
+
+    claim = Claim(
+        id="c2",
+        type="bug_behavior",
+        repro="import json; json.loads('invalid')",
+        expected="parsed dict",
+        actual="raises JSONDecodeError",
+        quote="Calling json.loads with invalid data raises JSONDecodeError",
+    )
+
+    mock_run = MagicMock()
+    mock_run.returncode = 1
+    mock_run.stdout = ""
+    mock_run.stderr = "json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True):
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "supports"
+            assert res.details["exception"] == "json.decoder.JSONDecodeError"
+
+
+def test_sandbox_clean_run_with_expected_error_mention_does_not_contradict_wrong_output():
+    # When report says "parse('') should raise ValueError but returns {}", and code cleanly returns {} (exit 0)
+    # Since no crash was claimed, this is a wrong-output bug without assertions (inconclusive), NOT contradicts!
+    claim = Claim(
+        id="c3",
+        type="bug_behavior",
+        repro="print(parse(''))",
+        expected="",
+        actual="returns {}",
+        quote="parse('') should raise ValueError but returns {}",
+    )
+
+    mock_run = MagicMock()
+    mock_run.returncode = 0
+    mock_run.stdout = "{}"
+    mock_run.stderr = ""
+
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True):
+        with patch("subprocess.run", return_value=mock_run):
+            res = run_sandbox_repro(claim)
+            assert res.outcome == "inconclusive"
+            assert res.outcome != "contradicts"
+            assert res.details.get("reason") == "no_assertion_in_repro"
+
+

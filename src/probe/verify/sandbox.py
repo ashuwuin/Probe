@@ -106,17 +106,27 @@ def copy_sanitized_repo(repo_root: Path, target_dir: Path) -> None:
 def _extract_final_exception(stderr: str) -> str | None:
     """Extracts the exception class name from the final line of a Python traceback.
 
-    Specifically inspects the start of the final line (e.g. 'ValueError: invalid literal')
-    to prevent error messages that mention other error words from misleading the parser.
+    Specifically inspects the start of the final line (e.g. 'ValueError: invalid literal'
+    or 'json.decoder.JSONDecodeError: Expecting value') to prevent error messages that
+    mention other error words from misleading the parser. Supports module prefixes.
     """
     for line in reversed(stderr.strip().splitlines()):
         line = line.strip()
         if not line:
             continue
-        m = re.match(r"^([A-Z][A-Za-z0-9]*(?:Error|Exception))(?::|\s|$)", line)
+        m = re.match(r"^((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))(?::|\s|$)", line)
         if m:
             return m.group(1)
     return None
+
+
+def _exc_matches(name1: str | None, name2: str | None) -> bool:
+    """Checks whether two exception class names match, ignoring module prefixes if one is unqualified."""
+    if not name1 or not name2:
+        return False
+    if name1 == name2:
+        return True
+    return name1.split(".")[-1] == name2.split(".")[-1]
 
 
 def is_docker_available() -> bool:
@@ -251,6 +261,54 @@ def run_sandbox_repro(
                 details={"reason": "docker_error", "exit_code": res.returncode, "stderr": stderr},
             )
 
+        # Pre-parse expected exceptions and claimed exception from the claim.
+        # NEVER extract claimed exception from claim.expected!
+        # Detect expected exceptions from claim.expected AND from expected patterns in quote/actual
+        # (e.g. "should raise ValueError", "instead of ValueError", "expected to raise KeyError")
+        expected_patterns = [
+            r"(?:should|expect(?:ed|s)?(?:\s+to)?|must|supposed\s+to|ought\s+to)\s+(?:raise|throw|produce)\s+((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))",
+            r"(?:instead\s+of|rather\s+than)\s+((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))",
+            r"((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\s+(?:is|was|were)\s+expected\b",
+            r"\bexpect(?:ing|s|ed)?\s+((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\b",
+        ]
+        expected_exc_matches: list[str] = []
+        expected_text = claim.expected or ""
+        expected_exc_matches.extend(
+            re.findall(r"\b((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\b", expected_text)
+        )
+        combined_context = f"{claim.quote or ''} {claim.actual or ''}"
+        for pat in expected_patterns:
+            for match in re.finditer(pat, combined_context, re.I):
+                expected_exc_matches.append(match.group(1))
+
+        actual_text = claim.actual or ""
+        actual_claimed_matches = re.findall(
+            r"\b((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\b", actual_text
+        )
+        actual_bug_matches = [
+            e for e in actual_claimed_matches
+            if not any(_exc_matches(e, exp) for exp in expected_exc_matches)
+        ]
+
+        quote_text = claim.quote or ""
+        quote_exc_matches = re.findall(
+            r"\b((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\b", quote_text
+        )
+        quote_bug_matches = [
+            e for e in quote_exc_matches
+            if not any(_exc_matches(e, exp) for exp in expected_exc_matches)
+        ]
+
+        has_assert = bool(re.search(r"\bassert\b", claim.repro))
+        if actual_bug_matches:
+            claimed_exc = actual_bug_matches[0]
+        elif quote_bug_matches:
+            claimed_exc = quote_bug_matches[0]
+        elif has_assert:
+            claimed_exc = "AssertionError"
+        else:
+            claimed_exc = None
+
         if res.returncode != 0:
             # 1. Snippet itself has SyntaxError (e.g. pasted traceback or invalid Python)
             if "SyntaxError" in stderr:
@@ -313,31 +371,9 @@ def run_sandbox_repro(
                     details={"reason": "no_exception_raised", "exit_code": res.returncode, "stderr": stderr},
                 )
 
-            # 6. Extract claimed exception ONLY from claim.actual and quote (NEVER from claim.expected!)
-            actual_text = claim.actual or ""
-            actual_claimed_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", actual_text)
-
-            expected_text = claim.expected or ""
-            expected_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", expected_text)
-
-            quote_text = claim.quote or ""
-            quote_exc_matches = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception))\b", quote_text)
-            # Remove exceptions that were explicitly stated as expected behavior (e.g. "should raise ValueError")
-            quote_bug_matches = [e for e in quote_exc_matches if e not in expected_exc_matches]
-
-            has_assert = bool(re.search(r"\bassert\b", claim.repro))
-            if actual_claimed_matches:
-                claimed_exc = actual_claimed_matches[0]
-            elif quote_bug_matches:
-                claimed_exc = quote_bug_matches[0]
-            elif has_assert:
-                claimed_exc = "AssertionError"
-            else:
-                claimed_exc = None
-
             # If report expected an exception (e.g. "should raise ValueError") and actual code correctly raised it,
             # the code behaved as expected (not a reproduced bug).
-            if expected_exc_matches and actual_exc in expected_exc_matches and (not actual_claimed_matches or actual_exc not in actual_claimed_matches):
+            if any(_exc_matches(exp, actual_exc) for exp in expected_exc_matches) and not (actual_bug_matches and any(_exc_matches(act, actual_exc) for act in actual_bug_matches)):
                 return CheckResult(
                     claim_id=claim.id,
                     checker="sandbox",
@@ -365,7 +401,7 @@ def run_sandbox_repro(
                 )
 
             # If claimed error does not match the actual error
-            if claimed_exc != actual_exc:
+            if not _exc_matches(claimed_exc, actual_exc):
                 return CheckResult(
                     claim_id=claim.id,
                     checker="sandbox",
@@ -396,11 +432,8 @@ def run_sandbox_repro(
             # Script executed with exit code 0
             has_assert = bool(re.search(r"\bassert\b", claim.repro))
             claims_crash = bool(
-                re.search(
-                    r"\b(?:crash|crashes|exception|traceback|error|raises?|recursionerror|keyerror|valueerror)\b",
-                    (claim.actual or "") + " " + (claim.quote or ""),
-                    re.I,
-                )
+                claimed_exc
+                or (claim.actual and re.search(r"\b(?:crash|crashes|exception|traceback|error|raises?)\b", claim.actual, re.I))
             )
 
             # If snippet was an expected behavior demonstration, clean execution is expected
