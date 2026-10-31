@@ -25,7 +25,7 @@ class Claim(BaseModel):
 class ClaimsResponse(BaseModel):
     claims: list[Claim]
     method: str = "llm"  # 'llm' or 'regex_fallback'
-    model: str = "qwen2.5:7b"
+    model: str = "qwen3:8b"
     confidence: Literal["high", "medium", "low"] = "high"
     dropped_claims: list[dict] = Field(default_factory=list, description="Claims dropped due to quote mismatches")
 

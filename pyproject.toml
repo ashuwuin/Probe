@@ -1,3 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "probe"
+version = "0.1.0"
+description = "Automated Evidence-Based Triage for GitHub Issues and Pull Requests"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0,<0.170.0",
+    "uvicorn>=0.28.0,<0.60.0",
+    "httpx>=0.27.0,<0.30.0",
+    "pydantic>=2.6.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+]
+
+[project.scripts]
+probe = "probe.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
