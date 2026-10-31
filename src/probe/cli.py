@@ -99,7 +99,7 @@ def post_or_update_comment(
     *,
     token: str | None = None,
     bot_login: str | None = None,
-    client: httpx.Client | None = None,
+    client: GitHubClient | httpx.Client | None = None,
 ) -> dict[str, Any]:
     """Posts a new triage comment or edits Probe's existing comment on GitHub.
 
@@ -110,75 +110,49 @@ def post_or_update_comment(
     Never overwrites user or third-party bot comments.
     """
     tok = token if token is not None else os.environ.get("GITHUB_TOKEN")
-    if not tok:
+    if not tok and client is None:
         raise ValueError("GITHUB_TOKEN is required to post or update comments on GitHub")
 
     active_bot_login = bot_login or os.getenv("PROBE_BOT_LOGIN")
 
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Authorization": f"Bearer {tok}",
-        "User-Agent": "probe-triage (+https://github.com/ashuwuin/Probe)",
-    }
-
-    http = client or httpx.Client(base_url="https://api.github.com", headers=headers, timeout=30.0)
-    close_client = client is None
+    if isinstance(client, GitHubClient):
+        gh = client
+        close_client = False
+    elif isinstance(client, httpx.Client):
+        gh = GitHubClient(token=tok or "", transport=client._transport)
+        close_client = True
+    else:
+        gh = GitHubClient(token=tok)
+        close_client = True
 
     try:
         # If PROBE_BOT_LOGIN is not set, discover the authenticated user's login via GET /user
         if not active_bot_login:
             try:
-                user_res = http.get("/user")
-                if user_res.status_code == 200:
-                    user_data = user_res.json()
-                    if isinstance(user_data, dict) and user_data.get("login"):
-                        active_bot_login = user_data["login"]
+                user_data = gh._json("/user")
+                if isinstance(user_data, dict) and user_data.get("login"):
+                    active_bot_login = user_data["login"]
             except Exception:
                 pass
             if not active_bot_login:
                 active_bot_login = "probe[bot]"
 
-        # Paginate through comments to ensure earlier comments past the first 100 are found
-        comments: list[dict[str, Any]] = []
-        page = 1
-        while True:
-            res = http.get(
-                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
-                params={"per_page": 100, "page": page},
-            )
-            res.raise_for_status()
-            batch = res.json()
-            if not isinstance(batch, list) or not batch:
-                break
-            comments.extend(batch)
-            if len(batch) < 100 or page >= 10:
-                break
-            page += 1
+        # Paginate through comments using GitHubClient.list_comments
+        comments = gh.list_comments(owner, repo, issue_number)
 
         # Search newest-first so the latest bot report is updated
         existing = find_editable_bot_comment(list(reversed(comments)), bot_login=active_bot_login)
 
         if existing and "id" in existing:
             comment_id = existing["id"]
-            patch_res = http.patch(
-                f"/repos/{owner}/{repo}/issues/comments/{comment_id}",
-                json={"body": body},
-            )
-            patch_res.raise_for_status()
-            data = patch_res.json()
+            data = gh.update_comment(owner, repo, comment_id, body)
             return {"action": "updated", "id": comment_id, "html_url": data.get("html_url", "")}
         else:
-            post_res = http.post(
-                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
-                json={"body": body},
-            )
-            post_res.raise_for_status()
-            data = post_res.json()
+            data = gh.post_comment(owner, repo, issue_number, body)
             return {"action": "created", "id": data.get("id"), "html_url": data.get("html_url", "")}
     finally:
         if close_client:
-            http.close()
+            gh.close()
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +423,7 @@ def run_triage_pipeline(
     is_pull_request: bool | None = None,
     use_llm: bool = True,
     model: str = DEFAULT_MODEL,
+    allow_sandbox: bool = True,
     diff_truncated: bool = False,
     changed_files_truncated: bool = False,
 ) -> tuple[ClaimsResponse, list[CheckResult], list[VerdictResult], VerdictStatus, str]:
@@ -472,7 +447,13 @@ def run_triage_pipeline(
 
         # Check B: PR Diff (for PR tests and bug fix targeting)
         if claim.type in ("pr_adds_tests", "pr_fixes_issue") or raw_diff:
-            res = check_pr_claim(claim, changed_files=files_list, raw_diff=raw_diff)
+            res = check_pr_claim(
+                claim,
+                changed_files=files_list,
+                raw_diff=raw_diff,
+                diff_truncated=diff_truncated,
+                changed_files_truncated=changed_files_truncated,
+            )
             # If the diff or file list was truncated, avoid false "contradicts" / "invalid"
             if (diff_truncated or changed_files_truncated) and claim.type in ("pr_adds_tests", "pr_fixes_issue"):
                 res = CheckResult(
@@ -490,7 +471,16 @@ def run_triage_pipeline(
 
         # Check C: Docker Sandbox Reproduction (for behavioral crashes)
         if claim.repro:
-            res = run_sandbox_repro(claim, repo_root=repo_root)
+            if allow_sandbox:
+                res = run_sandbox_repro(claim, repo_root=repo_root)
+            else:
+                res = CheckResult(
+                    claim_id=claim.id,
+                    checker="sandbox",
+                    outcome="inconclusive",
+                    evidence="Sandbox execution skipped for untrusted fork PR; requires maintainer /probe rerun authorization.",
+                    details={"skipped_reason": "untrusted_fork"},
+                )
             all_results.append(res)
 
     # 3. Aggregate Verdicts (never invalidate claims when extraction_method == 'regex_fallback')
@@ -687,7 +677,19 @@ def main() -> None:
     triage_parser.add_argument("--json", action="store_true", help="Output raw JSON format")
     triage_parser.add_argument("--post", action="store_true", help="Post or update the triage report comment on GitHub (requires GITHUB_TOKEN)")
 
+    # serve command
+    serve_parser = subparsers.add_parser("serve", help="Run the GitHub App webhook server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Host address to bind (default: 0.0.0.0)")
+    serve_parser.add_argument("--port", "-p", type=int, default=8000, help="Port to listen on (default: 8000)")
+    serve_parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+
     args = parser.parse_args()
+
+    if args.command == "serve":
+        import uvicorn
+        print(f"🚀 Starting Probe GitHub App webhook listener on http://{args.host}:{args.port}")
+        uvicorn.run("probe.app:app", host=args.host, port=args.port, reload=args.reload)
+        return
 
     if args.command == "triage":
         target_str = str(args.target).strip()

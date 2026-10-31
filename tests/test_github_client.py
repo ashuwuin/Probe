@@ -92,6 +92,20 @@ class FakeGitHub:
             return httpx.Response(200, json=self.files_pages[page - 1] if page <= len(self.files_pages) else [])
         if path == "/repos/octo/demo/commits":
             return httpx.Response(200, json=[{"sha": SHA}])
+        if path == "/repos/octo/demo/issues/7/comments":
+            if request.method == "GET":
+                return httpx.Response(200, json=[{"id": 42, "body": "first comment"}])
+            if request.method == "POST":
+                data = json.loads(request.content)
+                return httpx.Response(201, json={"id": 101, "body": data.get("body")})
+        if path == "/repos/octo/demo/issues/comments/101" and request.method == "PATCH":
+            data = json.loads(request.content)
+            return httpx.Response(200, json={"id": 101, "body": data.get("body")})
+        if path == "/repos/octo/demo/issues/7/labels" and request.method == "POST":
+            data = json.loads(request.content)
+            return httpx.Response(200, json=[{"name": label} for label in data.get("labels", [])])
+        if path.startswith("/repos/octo/demo/issues/7/labels/") and request.method == "DELETE":
+            return httpx.Response(200, json={})
         if path.startswith("/repos/octo/demo/tarball/"):
             return httpx.Response(200, content=self.tarball)
         return httpx.Response(404, json={"message": "Not Found"})
@@ -370,3 +384,35 @@ def test_safe_extract_accepts_a_path(tmp_path):
     archive.write_bytes(make_tarball([("m.py", "x = 1\n")]))
     assert safe_extract_tarball(archive, tmp_path / "out") == 1
     assert (tmp_path / "out" / "m.py").read_text() == "x = 1\n"
+
+
+def test_list_and_post_and_update_comments(client):
+    comments = client.list_comments("octo", "demo", 7)
+    assert len(comments) == 1
+    assert comments[0]["id"] == 42
+    assert comments[0]["body"] == "first comment"
+
+    posted = client.post_comment("octo", "demo", 7, "new triage report")
+    assert posted["id"] == 101
+    assert posted["body"] == "new triage report"
+
+    updated = client.update_comment("octo", "demo", 101, "edited report")
+    assert updated["id"] == 101
+    assert updated["body"] == "edited report"
+
+
+def test_add_labels(client):
+    labels = client.add_labels("octo", "demo", 7, ["triage:confirmed", "bug"])
+    assert len(labels) == 2
+    assert labels[0]["name"] == "triage:confirmed"
+    assert labels[1]["name"] == "bug"
+
+    empty = client.add_labels("octo", "demo", 7, [])
+    assert empty == []
+
+
+def test_remove_label_and_replace_triage_label(client):
+    assert client.remove_label("octo", "demo", 7, "bug") is True
+    client.replace_triage_label("octo", "demo", 7, "triage:confirmed")
+
+

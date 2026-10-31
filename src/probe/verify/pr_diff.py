@@ -244,8 +244,32 @@ def _check_fixes_issue(claim: Claim, changed: list[str], diff: dict[str, FileDif
     )
 
 
-def check_pr_claim(claim: Claim, changed_files: list[str], raw_diff: str = "") -> CheckResult:
+def check_pr_claim(
+    claim: Claim,
+    changed_files: list[str],
+    raw_diff: str = "",
+    *,
+    diff_truncated: bool = False,
+    changed_files_truncated: bool = False,
+) -> CheckResult:
     """Check a PR-level claim against the PR's changed files and (optional) unified diff."""
+    if diff_truncated or changed_files_truncated:
+        reasons = []
+        if diff_truncated:
+            reasons.append("diff was truncated due to size limits")
+        if changed_files_truncated:
+            reasons.append("changed files list was truncated due to size limits")
+        reason_str = " and ".join(reasons)
+        return _result(
+            claim,
+            "inconclusive",
+            f"PR change data is incomplete ({reason_str}); cannot deterministically verify PR claims.",
+            reason="truncated_pr_data",
+            confidence="low",
+            diff_truncated=diff_truncated,
+            changed_files_truncated=changed_files_truncated,
+        )
+
     diff = parse_unified_diff(raw_diff) if raw_diff else {}
     changed = sorted({normalize_path(p) for p in changed_files if p and p.strip()} | set(diff))
 
