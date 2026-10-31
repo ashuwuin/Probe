@@ -1,0 +1,25 @@
+{
+  "id": "checkable-01-symbol",
+  "url": "https://github.com/psf/requests/issues/9991",
+  "kind": "issue",
+  "label": "invalid",
+  "group": "checkable cases",
+  "label_source": "manual",
+  "sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+  "note": "Synthetic report claiming parse_url_v2() in src/requests/utils.py leaks credentials, but parse_url_v2 does not exist in psf/requests.",
+  "text": "Security: parse_url_v2() leaks proxy credentials\n\n`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them. When debug logging is enabled, user:password appears in debug logs.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "security_vuln",
+      "quote": "`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them",
+      "file": "src/requests/utils.py",
+      "symbol": "parse_url_v2",
+      "actual": "user:password appears in debug logs"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "contradicts"
+  }
+}
+

@@ -53,7 +53,17 @@ Until then a conservative baseline in `probe/evaluation.py` is used, and
 
 ## Current status (honest reading)
 
-With static and PR checks only, Probe returns `uncertain` for all 12 issues. It
-makes no wrong accusations, but it decides nothing. Most real reports are
-behaviour claims that only a reproduction can settle. The Docker sandbox, and
-running `--mode extracted` once extraction lands, are what will move coverage.
+### Maintainer-labelled issues (real repos)
+The benchmark evaluates 12 real, closed issues from Loguru, Poetry, Rich, and Textual.
+Probe enforces strict safety:
+- **0 wrong `invalid` verdicts**: Probe never falsely accuses a real bug report of being invalid.
+- **0 decisive verdicts without evidence**: Every non-uncertain verdict requires supporting or contradicting checks.
+- Real-repo reproduction snippets in these external projects require their respective project dependencies (e.g. `click`, `cffi`, `rich`). In Probe's hardened zero-network sandbox (`--network none`), network access is disabled at triage time to prevent SSRF and token leaks, and third-party packages are not pre-installed in the clean `python:3.11-slim` image. When an uninstalled dependency is encountered, Probe safely stops at `uncertain` with reason `missing_dependency` rather than guessing.
+
+### Checkable cases group
+To evaluate Probe's deterministic checkers and decision rules with ground truth evidence, the benchmark includes a **checkable cases** group:
+- **Symbol & file AST checks**: e.g. non-existent functions like `parse_url_v2` in `psf/requests` contradicted by static AST analysis (`invalid`).
+- **PR test diff checks**: e.g. real PR `psf/requests#5414` adding tests (`confirmed`), and PRs claiming tests without test files (`invalid`).
+- **Demo-repo reproductions**: e.g. self-contained bug reproductions in `examples/repos/shop` verifying failure reproduction (`confirmed`) and clean execution (`cannot-reproduce`).
+
+On the checkable cases group, Probe achieves **100% decided coverage** (5/5) and **100% accuracy on decided cases** (5/5), with 0 false invalid verdicts.

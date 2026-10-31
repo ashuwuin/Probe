@@ -11,7 +11,7 @@
 <details><summary>Checks that ran</summary>
 
 - `c1` · `static_ast` → **supports** (symbol_found): `format_price` is defined in `shop/billing.py` at line 11 (function).
-- `c1` · `sandbox` → **contradicts** (None): Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)
+- `c1` · `sandbox` → **contradicts** (ran_clean): Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)
 
 </details>
 

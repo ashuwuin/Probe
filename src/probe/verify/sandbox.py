@@ -223,6 +223,23 @@ def run_sandbox_repro(
             clean_repo_dir = tempfile.TemporaryDirectory(prefix="probe-clean-repo-", dir=_default_tmp_dir())
             clean_workspace = Path(clean_repo_dir.name) / "repo"
             copy_sanitized_repo(repo_root, clean_workspace)
+            # Ensure workspace directory and files are readable by container user 65534 on Linux hosts
+            try:
+                os.chmod(clean_repo_dir.name, 0o755)
+                os.chmod(clean_workspace, 0o755)
+                for root_dir, dirs, files in os.walk(clean_workspace):
+                    for d in dirs:
+                        try:
+                            os.chmod(os.path.join(root_dir, d), 0o755)
+                        except OSError:
+                            pass
+                    for f in files:
+                        try:
+                            os.chmod(os.path.join(root_dir, f), 0o644)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
             docker_cmd.extend([
                 "-v", f"{clean_workspace.resolve()}:/workspace:ro",
                 "-e", "PYTHONPATH=/workspace:/workspace/src",
@@ -436,6 +453,7 @@ def run_sandbox_repro(
                 outcome="supports",
                 evidence=f"Reproduced failure ({actual_exc}): {output_snippet}",
                 details={
+                    "reason": "reproduced",
                     "exit_code": res.returncode,
                     "exception": actual_exc,
                     "stdout": stdout,
@@ -470,7 +488,7 @@ def run_sandbox_repro(
                     checker="sandbox",
                     outcome="contradicts",
                     evidence="Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
-                    details={"exit_code": 0, "stdout": stdout, "has_assert": has_assert},
+                    details={"reason": "ran_clean", "exit_code": 0, "stdout": stdout, "has_assert": has_assert},
                 )
             else:
                 # Wrong output bugs without assertions cannot be disproven by exit code 0

@@ -1,0 +1,26 @@
+{
+  "id": "checkable-03-pr-no-tests",
+  "url": "https://github.com/psf/requests/pull/9992",
+  "kind": "pull_request",
+  "label": "invalid",
+  "group": "checkable cases",
+  "label_source": "manual",
+  "sha": "658c10e84a461e5298199f20f17b510b90ac478a",
+  "note": "Synthetic PR claiming to add unit tests, but changed files only modifies requests/utils.py with 0 test files.",
+  "text": "Update utils helpers\n\nI have added unit tests for the helper methods.",
+  "changed_files": [
+    "requests/utils.py"
+  ],
+  "diff": "diff --git a/requests/utils.py b/requests/utils.py\n--- a/requests/utils.py\n+++ b/requests/utils.py\n@@ -1,3 +1,4 @@\n+# update comments\n",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "pr_adds_tests",
+      "quote": "I have added unit tests for the helper methods."
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "contradicts"
+  }
+}
+

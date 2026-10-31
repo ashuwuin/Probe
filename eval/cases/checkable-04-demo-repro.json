@@ -1,0 +1,27 @@
+{
+  "id": "checkable-04-demo-repro",
+  "url": "https://github.com/demo/shop/issues/1",
+  "kind": "issue",
+  "label": "confirmed",
+  "group": "checkable cases",
+  "label_source": "manual",
+  "local_repo": "examples/repos/shop",
+  "sha": "0000000000000000000000000000000000000000",
+  "note": "Self-contained demo repo bug where apply_discount(100, 10) returns 0.0 instead of 90.0. Sandbox reproduction confirms AssertionError.",
+  "text": "apply_discount returns the wrong price\n\n`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0.\n\n```python\nfrom shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)\n```",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0.",
+      "file": "shop/billing.py",
+      "symbol": "apply_discount",
+      "expected": "90.0",
+      "actual": "0.0",
+      "repro": "from shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)\n"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "supports"
+  }
+}

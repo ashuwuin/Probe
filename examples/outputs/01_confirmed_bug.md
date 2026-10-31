@@ -11,7 +11,7 @@
 <details><summary>Checks that ran</summary>
 
 - `c1` · `static_ast` → **supports** (symbol_found): `apply_discount` is defined in `shop/billing.py` at line 6 (function).
-- `c1` · `sandbox` → **supports** (None): Reproduced failure (AssertionError): Traceback (most recent call last): File "<stdin>", line 3, in <module> AssertionError: 0.0
+- `c1` · `sandbox` → **supports** (reproduced): Reproduced failure (AssertionError): Traceback (most recent call last): File "<stdin>", line 3, in <module> AssertionError: 0.0
 
 </details>
 

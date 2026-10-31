@@ -59,12 +59,16 @@ def main(argv: list[str] | None = None) -> int:
     results = []
     with GitHubClient() as gh:
         for case in cases:
-            owner, repo = case.owner_repo
-            try:
-                snap = gh.snapshot(owner, repo, case.sha, resolved_by="eval_case_pin")
-                root, error = snap.path, None
-            except (GitHubError, ValueError) as exc:
-                root, error = None, f"{exc.__class__.__name__}: {exc}"
+            if case.local_repo:
+                root = (HERE.parent / case.local_repo).resolve()
+                error = None
+            else:
+                owner, repo = case.owner_repo
+                try:
+                    snap = gh.snapshot(owner, repo, case.sha, resolved_by="eval_case_pin")
+                    root, error = snap.path, None
+                except (GitHubError, ValueError) as exc:
+                    root, error = None, f"{exc.__class__.__name__}: {exc}"
 
             number = int(case.url.rstrip("/").split("/")[-1])
             is_pr = case.kind == "pull_request"
@@ -77,9 +81,19 @@ def main(argv: list[str] | None = None) -> int:
 
             claims, method = None, "gold"
             if args.mode == "extracted" and root is not None:
-                issue = gh.get_issue(owner, repo, number)
-                response = _extract(f"{issue.title}\n\n{issue.body}", is_pull_request=is_pr)
-                claims, method = response.claims, response.method
+                text = case.text
+                if not text:
+                    try:
+                        issue = gh.get_issue(owner, repo, number)
+                        text = f"{issue.title}\n\n{issue.body}"
+                    except Exception:
+                        if case.note:
+                            text = f"{case.id}\n\n{case.note}"
+                        elif case.gold_claims:
+                            text = "\n\n".join(c.quote for c in case.gold_claims)
+                if text:
+                    response = _extract(text, is_pull_request=is_pr)
+                    claims, method = response.claims, response.method
 
             result = evaluate_case(case, root, claims=claims, decide=decide, error=error, extraction_method=method)
             results.append(result)

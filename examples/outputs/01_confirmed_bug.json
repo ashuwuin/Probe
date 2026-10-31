@@ -48,6 +48,7 @@
         "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0",
         "line_number": null,
         "details": {
+          "reason": "reproduced",
           "exit_code": 1,
           "exception": "AssertionError",
           "stdout": "",

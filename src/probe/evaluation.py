@@ -41,13 +41,21 @@ class EvalCase(BaseModel):
     url: str
     kind: Literal["issue", "pull_request"] = "issue"
     label: Label
-    sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    sha: str = Field(pattern=r"^[0-9a-f]{40}$|^local$")
     note: str = ""
     gold_claims: list[Claim]
     expected_outcomes: dict[str, Literal["supports", "contradicts", "inconclusive"]] = Field(default_factory=dict)
     changed_files: list[str] = Field(default_factory=list)
     diff: str = ""
     maintainer_labels: list[str] = Field(default_factory=list)
+    local_repo: str | None = Field(
+        default=None,
+        description="Path relative to repo root for local demo repos, e.g. 'examples/repos/shop'",
+    )
+    text: str = Field(
+        default="",
+        description="Fallback issue/PR body text for extracted mode when GitHub API is not contacted",
+    )
     group: str = Field(
         default="maintainer-labelled issues",
         description="Report results per group; cases picked because the checkers can decide them go in their own group.",
@@ -414,8 +422,12 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         else:
             parts = []
             for c in r.claims:
-                outcomes = ", ".join(f"{x.checker}={x.outcome} ({x.details.get('reason')})" for x in r.checks.get(c.id, [])) or "no applicable check"
-                parts.append(f"{c.id}: {outcomes}")
+                outcomes = []
+                for x in r.checks.get(c.id, []):
+                    reason = x.details.get("reason")
+                    reason_part = f" ({reason})" if reason else ""
+                    outcomes.append(f"{x.checker}={x.outcome}{reason_part}")
+                parts.append(f"{c.id}: {', '.join(outcomes) or 'no applicable check'}")
             detail = "; ".join(parts)
         mark = "✅" if r.correct else ("⚠️" if r.decisive else "—")
         lines.append(f"| [{r.case.id}]({r.case.url}) | `{r.case.label}` | {mark} `{r.prediction}` | {_cell(detail, 220)} |")
@@ -427,8 +439,9 @@ def render_markdown(results: list[CaseResult], metrics: Metrics, *, mode: str, v
         "",
         "## Limits of this run",
         "",
-        "- The Docker sandbox is not wired in yet, so no case can be `confirmed` or `cannot-reproduce` "
-        "by reproduction; behaviour claims stay `uncertain`.",
+        "- The Docker sandbox runs with network isolation (`--network none`) in a standard `python:3.11-slim` environment "
+        "without external project dependencies pre-installed. Real-repo repros requiring third-party libraries safely stop at "
+        "`uncertain` (`missing_dependency`), preventing false verdicts.",
         "- Gold-claims mode measures the checkers and verdict rules with hand-written claims; it does not "
         "measure LLM extraction.",
         "- The dataset is small (see `eval/cases/`); treat percentages as indicative.",

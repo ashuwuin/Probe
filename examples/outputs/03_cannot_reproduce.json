@@ -50,6 +50,7 @@
         "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
         "line_number": null,
         "details": {
+          "reason": "ran_clean",
           "exit_code": 0,
           "stdout": "-5.00 INR",
           "has_assert": false

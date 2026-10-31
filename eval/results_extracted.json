@@ -1,5 +1,369 @@
 [
   {
+    "id": "checkable-01-symbol",
+    "label": "invalid",
+    "prediction": "invalid",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "security_vuln",
+        "file": "src/requests/utils.py",
+        "symbol": "parse_url_v2",
+        "version": null,
+        "expected": "Proxy credentials are not logged",
+        "actual": "User:password appears in debug logs",
+        "repro": null,
+        "issue_number": null,
+        "quote": "Security: parse_url_v2() leaks proxy credentials"
+      },
+      {
+        "id": "c2",
+        "type": "bug_behavior",
+        "file": "src/requests/utils.py",
+        "symbol": "parse_url_v2",
+        "version": null,
+        "expected": "Userinfo part of proxy URLs is stripped before logging",
+        "actual": "User:password appears in debug logs",
+        "repro": null,
+        "issue_number": null,
+        "quote": "When debug logging is enabled, user:password appears in debug logs"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "contradicts",
+          "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+          "line_number": null,
+          "details": {
+            "reason": "symbol_not_found",
+            "confidence": "high",
+            "files_scanned": 37,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "contradicts",
+          "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+          "line_number": null,
+          "details": {
+            "reason": "symbol_not_found",
+            "confidence": "high",
+            "files_scanned": 37,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "invalid",
+        "confidence": "high",
+        "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+        "quote": "Security: parse_url_v2() leaks proxy credentials"
+      },
+      {
+        "claim_id": "c2",
+        "status": "invalid",
+        "confidence": "high",
+        "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+        "quote": "When debug logging is enabled, user:password appears in debug logs"
+      }
+    ]
+  },
+  {
+    "id": "checkable-02-pr-tests",
+    "label": "confirmed",
+    "prediction": "confirmed",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "symbol_exists",
+        "file": null,
+        "symbol": "InvalidUrl",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "Raise InvalidUrl if host starts with '.' character"
+      },
+      {
+        "id": "c2",
+        "type": "pr_adds_tests",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "inconclusive",
+          "evidence": "`InvalidUrl` is not defined anywhere in the repository. Did you mean `InvalidURL` in `requests/exceptions.py` at line 90?",
+          "line_number": 90,
+          "details": {
+            "file": "requests/exceptions.py",
+            "reason": "close_match",
+            "suggestions": [
+              "InvalidURL (requests/exceptions.py:90)"
+            ],
+            "files_scanned": 35,
+            "parse_errors": [],
+            "truncated": false
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "pr_diff",
+          "outcome": "supports",
+          "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py; new tests include `def test_invalid_url():`.",
+          "line_number": null,
+          "details": {
+            "reason": "tests_added",
+            "test_files": [
+              "tests/test_requests.py"
+            ],
+            "added_tests": [
+              "def test_invalid_url():"
+            ],
+            "confidence": "high"
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "uncertain",
+        "confidence": "low",
+        "evidence": "`InvalidUrl` is not defined anywhere in the repository. Did you mean `InvalidURL` in `requests/exceptions.py` at line 90?",
+        "quote": "Raise InvalidUrl if host starts with '.' character"
+      },
+      {
+        "claim_id": "c2",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py; new tests include `def test_invalid_url():`.",
+        "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`"
+      }
+    ]
+  },
+  {
+    "id": "checkable-03-pr-no-tests",
+    "label": "invalid",
+    "prediction": "invalid",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "pr_adds_tests",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "I have added unit tests for the helper methods."
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "pr_diff",
+          "outcome": "contradicts",
+          "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
+          "line_number": null,
+          "details": {
+            "reason": "no_test_files",
+            "changed_files": [
+              "requests/utils.py"
+            ],
+            "confidence": "medium",
+            "note": "Tests in non-standard locations are not detected."
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "invalid",
+        "confidence": "medium",
+        "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
+        "quote": "I have added unit tests for the helper methods."
+      }
+    ]
+  },
+  {
+    "id": "checkable-04-demo-repro",
+    "label": "confirmed",
+    "prediction": "confirmed",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": "shop/billing.py",
+        "symbol": "apply_discount",
+        "version": null,
+        "expected": "returns 90.0 for a 10% discount on 100",
+        "actual": "returns 0.0 for a 10% discount on 100",
+        "repro": "from shop.billing import apply_discount\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)",
+        "issue_number": null,
+        "quote": "apply_discount returns the wrong price"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`apply_discount` is defined in `shop/billing.py` at line 6 (function).",
+          "line_number": 6,
+          "details": {
+            "file": "shop/billing.py",
+            "kind": "function",
+            "qualname": "apply_discount",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "matches": 1
+          }
+        },
+        {
+          "claim_id": "c1",
+          "checker": "sandbox",
+          "outcome": "supports",
+          "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 2, in <module>\nAssertionError: 0.0",
+          "line_number": null,
+          "details": {
+            "reason": "reproduced",
+            "exit_code": 1,
+            "exception": "AssertionError",
+            "stdout": "",
+            "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 2, in <module>\nAssertionError: 0.0"
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 2, in <module>\nAssertionError: 0.0",
+        "quote": "apply_discount returns the wrong price"
+      }
+    ]
+  },
+  {
+    "id": "checkable-05-demo-clean",
+    "label": "cannot-reproduce",
+    "prediction": "cannot-reproduce",
+    "error": null,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "file": null,
+        "symbol": null,
+        "version": null,
+        "expected": "format_price handles negative amounts gracefully",
+        "actual": "format_price crashes on negative refund amount",
+        "repro": "from shop.billing import format_price\nprint(format_price(-5))",
+        "issue_number": null,
+        "quote": "format_price crashes on negative amounts"
+      },
+      {
+        "id": "c2",
+        "type": "symbol_exists",
+        "file": null,
+        "symbol": "format_price",
+        "version": null,
+        "expected": null,
+        "actual": null,
+        "repro": null,
+        "issue_number": null,
+        "quote": "from shop.billing import format_price"
+      }
+    ],
+    "checks": {
+      "c1": [
+        {
+          "claim_id": "c1",
+          "checker": "sandbox",
+          "outcome": "contradicts",
+          "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
+          "line_number": null,
+          "details": {
+            "reason": "ran_clean",
+            "exit_code": 0,
+            "stdout": "-5.00 INR",
+            "has_assert": false
+          }
+        }
+      ],
+      "c2": [
+        {
+          "claim_id": "c2",
+          "checker": "static_ast",
+          "outcome": "supports",
+          "evidence": "`format_price` is defined in `shop/billing.py` at line 11 (function).",
+          "line_number": 11,
+          "details": {
+            "file": "shop/billing.py",
+            "kind": "function",
+            "qualname": "format_price",
+            "reason": "symbol_found",
+            "confidence": "high",
+            "file_mismatch": false,
+            "matches": 1,
+            "other_locations": []
+          }
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "claim_id": "c1",
+        "status": "cannot-reproduce",
+        "confidence": "medium",
+        "evidence": "Ran cleanly with exit code 0 (claimed crash or assertion failure did not occur)",
+        "quote": "format_price crashes on negative amounts"
+      },
+      {
+        "claim_id": "c2",
+        "status": "confirmed",
+        "confidence": "high",
+        "evidence": "`format_price` is defined in `shop/billing.py` at line 11 (function).",
+        "quote": "from shop.billing import format_price"
+      }
+    ]
+  },
+  {
     "id": "loguru-1448",
     "label": "invalid",
     "prediction": "uncertain",

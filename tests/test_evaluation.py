@@ -20,6 +20,7 @@ from probe.evaluation import (
     run_checks,
 )
 from probe.models import CheckResult, Claim, VerdictResult
+from probe.verify.sandbox import is_docker_available
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "a" * 40
@@ -257,7 +258,10 @@ def test_local_examples_offline(example_id, status):
     gen = _load_examples_module()
     manifest = {e["id"]: e for e in json.loads((ROOT / "examples" / "manifest.json").read_text())}
     result = gen.run_example(manifest[example_id], gh=None)
-    assert result["status"] in (status, "matches expected")
+    if is_docker_available():
+        assert result["status"] == "matches expected"
+    else:
+        assert result["status"] == status
     assert "Probe evidence report" in gen.render(result)
 
 

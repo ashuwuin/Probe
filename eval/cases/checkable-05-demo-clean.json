@@ -1,0 +1,24 @@
+{
+  "id": "checkable-05-demo-clean",
+  "url": "https://github.com/demo/shop/issues/2",
+  "kind": "issue",
+  "label": "cannot-reproduce",
+  "group": "checkable cases",
+  "label_source": "manual",
+  "local_repo": "examples/repos/shop",
+  "sha": "0000000000000000000000000000000000000000",
+  "note": "Self-contained demo repo issue alleging format_price(-5) crashes, but it executes cleanly with exit 0. Sandbox contradiction confirms cannot-reproduce.",
+  "text": "format_price crashes on negative amounts\n\nCalling `format_price()` with a negative refund amount crashes the checkout page.\n\n```python\nfrom shop.billing import format_price\n\nprint(format_price(-5))\n```",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page.",
+      "actual": "ValueError: amount must be non-negative",
+      "repro": "from shop.billing import format_price\n\nprint(format_price(-5))\n"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "contradicts"
+  }
+}
