@@ -21,12 +21,22 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+from probe.github_client import (
+    GitHubClient,
+    GitHubError,
+    GitHubTarget,
+    InvalidURLError,
+    NotFoundError,
+    RateLimitError,
+    parse_github_url,
+)
 from probe.models import (
     CheckResult,
     Claim,
@@ -79,6 +89,96 @@ def find_editable_bot_comment(
             return comment
 
     return None
+
+
+def post_or_update_comment(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    body: str,
+    *,
+    token: str | None = None,
+    bot_login: str | None = None,
+    client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """Posts a new triage comment or edits Probe's existing comment on GitHub.
+
+    SECURITY GUARANTEE:
+    Uses find_editable_bot_comment to match existing comments. Only comments that
+    contain REPORT_MARKER and were authored by Probe's bot account (or the authenticated
+    user when using personal tokens) are edited.
+    Never overwrites user or third-party bot comments.
+    """
+    tok = token if token is not None else os.environ.get("GITHUB_TOKEN")
+    if not tok:
+        raise ValueError("GITHUB_TOKEN is required to post or update comments on GitHub")
+
+    active_bot_login = bot_login or os.getenv("PROBE_BOT_LOGIN")
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Authorization": f"Bearer {tok}",
+        "User-Agent": "probe-triage (+https://github.com/ashuwuin/Probe)",
+    }
+
+    http = client or httpx.Client(base_url="https://api.github.com", headers=headers, timeout=30.0)
+    close_client = client is None
+
+    try:
+        # If PROBE_BOT_LOGIN is not set, discover the authenticated user's login via GET /user
+        if not active_bot_login:
+            try:
+                user_res = http.get("/user")
+                if user_res.status_code == 200:
+                    user_data = user_res.json()
+                    if isinstance(user_data, dict) and user_data.get("login"):
+                        active_bot_login = user_data["login"]
+            except Exception:
+                pass
+            if not active_bot_login:
+                active_bot_login = "probe[bot]"
+
+        # Paginate through comments to ensure earlier comments past the first 100 are found
+        comments: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            res = http.get(
+                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                params={"per_page": 100, "page": page},
+            )
+            res.raise_for_status()
+            batch = res.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            comments.extend(batch)
+            if len(batch) < 100 or page >= 10:
+                break
+            page += 1
+
+        # Search newest-first so the latest bot report is updated
+        existing = find_editable_bot_comment(list(reversed(comments)), bot_login=active_bot_login)
+
+        if existing and "id" in existing:
+            comment_id = existing["id"]
+            patch_res = http.patch(
+                f"/repos/{owner}/{repo}/issues/comments/{comment_id}",
+                json={"body": body},
+            )
+            patch_res.raise_for_status()
+            data = patch_res.json()
+            return {"action": "updated", "id": comment_id, "html_url": data.get("html_url", "")}
+        else:
+            post_res = http.post(
+                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                json={"body": body},
+            )
+            post_res.raise_for_status()
+            data = post_res.json()
+            return {"action": "created", "id": data.get("id"), "html_url": data.get("html_url", "")}
+    finally:
+        if close_client:
+            http.close()
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +449,8 @@ def run_triage_pipeline(
     is_pull_request: bool | None = None,
     use_llm: bool = True,
     model: str = DEFAULT_MODEL,
+    diff_truncated: bool = False,
+    changed_files_truncated: bool = False,
 ) -> tuple[ClaimsResponse, list[CheckResult], list[VerdictResult], VerdictStatus, str]:
     """Runs the complete triage pipeline on input text and repository context."""
     # Infer is_pull_request if not explicitly passed
@@ -371,6 +473,19 @@ def run_triage_pipeline(
         # Check B: PR Diff (for PR tests and bug fix targeting)
         if claim.type in ("pr_adds_tests", "pr_fixes_issue") or raw_diff:
             res = check_pr_claim(claim, changed_files=files_list, raw_diff=raw_diff)
+            # If the diff or file list was truncated, avoid false "contradicts" / "invalid"
+            if (diff_truncated or changed_files_truncated) and claim.type in ("pr_adds_tests", "pr_fixes_issue"):
+                res = CheckResult(
+                    claim_id=claim.id,
+                    checker="pr_diff",
+                    outcome="inconclusive",
+                    evidence=(
+                        "PR diff or changed file list was truncated by size limits; "
+                        "cannot conclusively verify whether tests were added or files were changed."
+                    ),
+                    line_number=None,
+                    details={"diff_truncated": diff_truncated, "changed_files_truncated": changed_files_truncated},
+                )
             all_results.append(res)
 
         # Check C: Docker Sandbox Reproduction (for behavioral crashes)
@@ -559,8 +674,8 @@ def main() -> None:
 
     # triage command
     triage_parser = subparsers.add_parser("triage", help="Triage an issue or pull request")
-    triage_parser.add_argument("target", help="Issue/PR text, or path to text/diff file")
-    triage_parser.add_argument("--repo", "-r", default=".", help="Path to repository snapshot (default: .)")
+    triage_parser.add_argument("target", help="Issue/PR text, or path to text/diff file, or GitHub URL")
+    triage_parser.add_argument("--repo", "-r", default=None, help="Path to repository snapshot (default: current directory or auto-downloaded GitHub snapshot)")
     triage_parser.add_argument("--repo-name", default=None, help="GitHub repository slug (e.g. owner/repo)")
     triage_parser.add_argument("--issue-number", "-n", type=int, default=None, help="Issue or PR number")
     triage_parser.add_argument("--diff", default="", help="Path to raw unified diff file (optional)")
@@ -570,17 +685,73 @@ def main() -> None:
     triage_parser.add_argument("--no-llm", action="store_true", help="Force deterministic regex extraction (offline/CI mode)")
     triage_parser.add_argument("--markdown", "-m", action="store_true", help="Output GitHub Markdown comment format")
     triage_parser.add_argument("--json", action="store_true", help="Output raw JSON format")
+    triage_parser.add_argument("--post", action="store_true", help="Post or update the triage report comment on GitHub (requires GITHUB_TOKEN)")
 
     args = parser.parse_args()
 
     if args.command == "triage":
-        repo_path = Path(args.repo).resolve()
+        target_str = str(args.target).strip()
         target_path = Path(args.target)
+        repo_path: Path | None = Path(args.repo).resolve() if args.repo else None
 
         text = ""
         raw_diff = ""
 
-        if target_path.exists() and target_path.is_file():
+        # Determine is_pull_request from CLI flags
+        is_pr: bool | None = None
+        if args.pr:
+            is_pr = True
+        elif args.issue:
+            is_pr = False
+
+        repo_name = args.repo_name
+        issue_num = args.issue_number
+
+        # 1. Check if target is a GitHub Issue or Pull Request URL
+        gh_target: GitHubTarget | None = None
+        changed_files: list[str] = []
+        diff_truncated = False
+        changed_files_truncated = False
+
+        if "github.com" in target_str or target_str.startswith(("http://", "https://")):
+            try:
+                gh_target = parse_github_url(target_str)
+            except InvalidURLError:
+                gh_target = None
+
+        if gh_target is not None:
+            try:
+                with GitHubClient() as client:
+                    if gh_target.kind == "issue":
+                        issue_data = client.get_issue(gh_target.owner, gh_target.repo, gh_target.number)
+                        text = f"{issue_data.title}\n\n{issue_data.body}" if issue_data.body else issue_data.title
+                        if is_pr is None:
+                            is_pr = False
+                        if repo_path is None:
+                            snapshot = client.snapshot_for_issue(issue_data)
+                            repo_path = snapshot.path
+                    else:
+                        pull_data = client.get_pull(gh_target.owner, gh_target.repo, gh_target.number)
+                        text = f"{pull_data.title}\n\n{pull_data.body}" if pull_data.body else pull_data.title
+                        if not raw_diff:
+                            raw_diff = pull_data.diff
+                        changed_files = pull_data.changed_files
+                        diff_truncated = pull_data.diff_truncated
+                        changed_files_truncated = pull_data.changed_files_truncated
+                        if is_pr is None:
+                            is_pr = True
+                        if repo_path is None:
+                            snapshot = client.snapshot_for_pull(pull_data)
+                            repo_path = snapshot.path
+
+                if not repo_name:
+                    repo_name = gh_target.full_name
+                if not issue_num:
+                    issue_num = gh_target.number
+            except (NotFoundError, RateLimitError, GitHubError) as err:
+                sys.stderr.write(f"GitHub Error: {err}\n")
+                sys.exit(1)
+        elif target_path.exists() and target_path.is_file():
             content = target_path.read_text(encoding="utf-8")
             if target_path.suffix in (".diff", ".patch") or content.startswith("diff --git"):
                 raw_diff = content
@@ -595,20 +766,12 @@ def main() -> None:
             if diff_file.exists() and diff_file.is_file():
                 raw_diff = diff_file.read_text(encoding="utf-8")
 
-        # Determine is_pull_request
-        is_pr: bool | None = None
-        if args.pr:
-            is_pr = True
-        elif args.issue:
-            is_pr = False
+        # Fallback for repo_path if not resolved from snapshot or CLI
+        if repo_path is None:
+            repo_path = Path(".").resolve()
 
-        # Determine repository name and issue number for report title and link.
-        # SECURITY & ACCURACY: Never extract repo or issue numbers from arbitrary prose in the text body
-        # (e.g. "Fixes #12" or links to external repos mentioned in the report).
-        repo_name = args.repo_name
+        # Determine repository name and issue number for report title and link if still unset.
         if not repo_name:
-            # Check if target argument is a GitHub URL
-            target_str = str(args.target)
             gh_url_match = re.search(r"github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", target_str)
             if gh_url_match:
                 repo_name = gh_url_match.group(1).removesuffix(".git")
@@ -630,9 +793,7 @@ def main() -> None:
         if not repo_name:
             repo_name = repo_path.name if repo_path.name and repo_path.name != "." else "Probe"
 
-        issue_num = args.issue_number
         if not issue_num:
-            target_str = str(args.target)
             target_num_match = re.search(r"(?:issues|pull)/(\d+)", target_str)
             if target_num_match:
                 issue_num = int(target_num_match.group(1))
@@ -647,10 +808,45 @@ def main() -> None:
             text=text,
             repo_root=repo_path,
             raw_diff=raw_diff,
+            changed_files=changed_files,
             is_pull_request=is_pr,
             use_llm=not args.no_llm,
             model=args.model,
+            diff_truncated=diff_truncated,
+            changed_files_truncated=changed_files_truncated,
         )
+
+        md_report = render_markdown_report(
+            claims_resp,
+            all_results,
+            verdicts,
+            overall=overall_status,
+            overall_summary=overall_summary,
+            repo=repo_name,
+            issue_number=issue_num,
+        )
+
+        if args.post:
+            if "/" not in repo_name:
+                sys.stderr.write("Error: Cannot post comment without a valid repository owner/repo slug\n")
+                sys.exit(1)
+            owner, repo_slug = repo_name.split("/", 1)
+            try:
+                post_res = post_or_update_comment(
+                    owner=owner,
+                    repo=repo_slug,
+                    issue_number=issue_num,
+                    body=md_report,
+                )
+                action = post_res.get("action", "posted")
+                comment_url = post_res.get("html_url", "")
+                if args.json:
+                    sys.stderr.write(f"Comment {action}: {comment_url}\n")
+                else:
+                    print(f"Comment {action}: {comment_url}")
+            except Exception as exc:
+                sys.stderr.write(f"Error posting comment to GitHub: {exc}\n")
+                sys.exit(1)
 
         if args.json:
             out = {
@@ -662,18 +858,8 @@ def main() -> None:
             }
             print(json.dumps(out, indent=2))
         elif args.markdown:
-            print(
-                render_markdown_report(
-                    claims_resp,
-                    all_results,
-                    verdicts,
-                    overall=overall_status,
-                    overall_summary=overall_summary,
-                    repo=repo_name,
-                    issue_number=issue_num,
-                )
-            )
-        else:
+            print(md_report)
+        elif not args.post:
             print(render_terminal_report(claims_resp, verdicts, overall_status, overall_summary))
 
 
