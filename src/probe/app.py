@@ -26,6 +26,10 @@ import re
 import threading
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 

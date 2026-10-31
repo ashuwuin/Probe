@@ -575,8 +575,6 @@ def test_cli_main_triage_github_url_not_found(monkeypatch):
         assert exc.value.code == 1
 
 
-
-
 # ---------------------------------------------------------------- repros on pull requests
 
 def test_pull_request_repro_is_not_run_against_pr_head(tmp_path):
@@ -605,3 +603,11 @@ def test_issue_repro_still_runs_in_sandbox(tmp_path):
     with patch.object(cli_module, "run_sandbox_repro", side_effect=fake) as sandbox:
         cli_module.run_triage_pipeline(text, tmp_path, is_pull_request=False, use_llm=False)
     assert sandbox.called
+
+
+def test_python_module_entrypoint():
+    """Ensure probe.__main__ executes main()."""
+    import runpy
+    with patch("probe.cli.main") as mock_main:
+        runpy.run_module("probe", run_name="__main__")
+        mock_main.assert_called_once()
