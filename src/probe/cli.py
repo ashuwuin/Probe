@@ -687,7 +687,19 @@ def main() -> None:
     triage_parser.add_argument("--json", action="store_true", help="Output raw JSON format")
     triage_parser.add_argument("--post", action="store_true", help="Post or update the triage report comment on GitHub (requires GITHUB_TOKEN)")
 
+    # serve command
+    serve_parser = subparsers.add_parser("serve", help="Run the GitHub App webhook server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Host address to bind (default: 0.0.0.0)")
+    serve_parser.add_argument("--port", "-p", type=int, default=8000, help="Port to listen on (default: 8000)")
+    serve_parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+
     args = parser.parse_args()
+
+    if args.command == "serve":
+        import uvicorn
+        print(f"🚀 Starting Probe GitHub App webhook listener on http://{args.host}:{args.port}")
+        uvicorn.run("probe.app:app", host=args.host, port=args.port, reload=args.reload)
+        return
 
     if args.command == "triage":
         target_str = str(args.target).strip()

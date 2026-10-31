@@ -1,8 +1,8 @@
-"""Read-only GitHub client: fetch issue / PR context and immutable repo snapshots.
+"""GitHub client: fetch issue / PR context, immutable repo snapshots, and post triage results.
 
-Used by the CLI and the evaluation harness. It only performs GET requests and
-never writes to GitHub. Public repositories work without credentials; pass a
-token (or set ``GITHUB_TOKEN``) for higher rate limits.
+Used by the CLI, GitHub App, and evaluation harness. Public repositories work
+without credentials; pass a token (or set ``GITHUB_TOKEN``) for higher rate
+limits or write operations.
 
 Key guarantees:
 
@@ -287,6 +287,28 @@ class GitHubClient:
         _raise_for_status(response, path)
         raise AssertionError("unreachable")  # pragma: no cover
 
+    def _post(self, path: str, *, json: dict | list | None = None, accept: str | None = None) -> httpx.Response:
+        headers = {"Accept": accept} if accept else None
+        try:
+            response = self._http.post(path, json=json, headers=headers)
+        except httpx.HTTPError as exc:
+            raise GitHubError(f"Network error calling GitHub: {exc.__class__.__name__}") from exc
+        if response.status_code in (200, 201):
+            return response
+        _raise_for_status(response, path)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _patch(self, path: str, *, json: dict | list | None = None, accept: str | None = None) -> httpx.Response:
+        headers = {"Accept": accept} if accept else None
+        try:
+            response = self._http.patch(path, json=json, headers=headers)
+        except httpx.HTTPError as exc:
+            raise GitHubError(f"Network error calling GitHub: {exc.__class__.__name__}") from exc
+        if response.status_code == 200:
+            return response
+        _raise_for_status(response, path)
+        raise AssertionError("unreachable")  # pragma: no cover
+
     def _json(self, path: str, **params) -> dict | list:
         return self._get(path, params=params or None).json()
 
@@ -431,3 +453,44 @@ class GitHubClient:
     def snapshot_for_pull(self, pull: PullData) -> Snapshot:
         """The PR's head commit."""
         return self.snapshot(pull.owner, pull.repo, pull.head_sha, resolved_by="pr_head")
+
+    # ---- comments and labels (for bot & GitHub App) ------------------------
+
+    def list_comments(self, owner: str, repo: str, number: int) -> list[dict]:
+        """Fetch all comments for an issue or pull request."""
+        _check_name(owner, "owner")
+        _check_name(repo, "repo")
+        comments: list[dict] = []
+        page = 1
+        while True:
+            batch = self._json(f"/repos/{owner}/{repo}/issues/{int(number)}/comments", per_page=100, page=page)
+            if not isinstance(batch, list) or not batch:
+                break
+            comments.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return comments
+
+    def post_comment(self, owner: str, repo: str, number: int, body: str) -> dict:
+        """Post a comment on an issue or pull request."""
+        _check_name(owner, "owner")
+        _check_name(repo, "repo")
+        res = self._post(f"/repos/{owner}/{repo}/issues/{int(number)}/comments", json={"body": body})
+        return res.json()
+
+    def update_comment(self, owner: str, repo: str, comment_id: int, body: str) -> dict:
+        """Edit an existing issue/PR comment."""
+        _check_name(owner, "owner")
+        _check_name(repo, "repo")
+        res = self._patch(f"/repos/{owner}/{repo}/issues/comments/{int(comment_id)}", json={"body": body})
+        return res.json()
+
+    def add_labels(self, owner: str, repo: str, number: int, labels: list[str]) -> list[dict]:
+        """Add one or more labels to an issue or pull request."""
+        _check_name(owner, "owner")
+        _check_name(repo, "repo")
+        if not labels:
+            return []
+        res = self._post(f"/repos/{owner}/{repo}/issues/{int(number)}/labels", json={"labels": labels})
+        return res.json()
