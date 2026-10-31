@@ -537,3 +537,17 @@ def test_unmappable_installed_paths_stay_external(src_layout_repo, path):
     result = check_static_symbol(src_layout_repo, claim("calculate_tax", path))
     assert result.outcome == "inconclusive"
     assert result.details["reason"] == "external_file"
+
+
+def test_file_matching_declared_dependency_is_inconclusive(repo):
+    (repo / "pyproject.toml").write_text('[project]\ndependencies = ["poetry-core>=1.0"]\n')
+    result = check_static_symbol(repo, claim(None, "poetry-core"))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_dependency"
+
+
+def test_bare_name_without_extension_file_is_inconclusive(repo):
+    result = check_static_symbol(repo, claim(None, "unknown_pkg"))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "bare_name_without_extension"
+

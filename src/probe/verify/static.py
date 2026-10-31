@@ -489,6 +489,20 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
         if any_truncated:
             return _result(claim, "inconclusive", f"`{rel_file}` not found, but the repository search was truncated.",
                            reason="search_truncated")
+        if rel_file:
+            stem = PurePosixPath(rel_file).name
+            if _norm_dist(stem) in declared_dependencies(root):
+                return _result(
+                    claim, "inconclusive",
+                    f"`{rel_file}` is a declared dependency outside this repository; its absence as a local file says nothing about the claim.",
+                    reason="external_dependency",
+                )
+            if PurePosixPath(rel_file).suffix == "" and "/" not in rel_file and "\\" not in rel_file:
+                return _result(
+                    claim, "inconclusive",
+                    f"`{rel_file}` is a bare name without an extension; its absence as a file cannot establish falsity.",
+                    reason="bare_name_without_extension",
+                )
         return _result(claim, "contradicts", f"File `{rel_file}` does not exist in the repository.",
                        reason="file_not_found", confidence="high")
 

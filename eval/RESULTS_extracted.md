@@ -1,6 +1,6 @@
 # Probe evaluation results
 
-_Generated 2026-10-31 21:57 UTC · mode: **extracted** · verdicts: **probe.verdict.evaluate_claim_verdict**_
+_Generated 2026-10-31 23:10 UTC · mode: **extracted** · verdicts: **probe.verdict.evaluate_claim_verdict (overall: probe.verdict.get_overall_verdict)**_
 
 Evaluation suite combining real closed GitHub issues and checkable deterministic test cases. Maintainer-labelled issues reflect real-world reports; checkable cases verify AST, diff, and sandboxed checks with ground truth.
 
@@ -69,4 +69,3 @@ Evaluation suite combining real closed GitHub issues and checkable deterministic
 - The dataset is small (see `eval/cases/`); treat percentages as indicative.
 - Cases in the "checkable" groups were selected *because* the static and PR checkers can decide them; report them separately from the maintainer-labelled issues, never as one blended accuracy.
 - Labels marked `manual` (PR test claims) come from our own inspection of the PR's changed files, not from a maintainer label.
-

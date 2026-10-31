@@ -78,4 +78,7 @@ Probe supports two evaluation modes:
 2. **Extracted Mode (`--mode extracted`)**: Evaluates the full end-to-end pipeline using `qwen3:8b` via Ollama on localhost to extract claims from raw issue/PR text in [`eval/RESULTS_extracted.md`](RESULTS_extracted.md).
    - **Accuracy on Decided Cases**: 5/5 (100%) on checkable cases.
    - **Wrong `invalid` Verdicts**: 0 across all 17 cases.
-   - **Key Finding**: The local open-source model `qwen3:8b` reliably extracts the essential technical claims (symbols, files, and repro code) from free-form text. Furthermore, Probe's defense-in-depth pipeline (schema validation, verbatim quote verification against source text, and prompt injection isolation) ensures that even if the model extracts extraneous claims, unsupported claims are pruned and only claims with direct code evidence reach deterministic AST and sandbox checkers.
+   - **Overall Verdict Agreement**: 17/17 (100% identical overall verdicts between gold and extracted mode).
+   - **Claim Counts (Finer Splitting)**: 44 extracted claims by `qwen3:8b` vs. 19 hand-written gold claims across the 17 cases, reflecting finer-grained splitting of multi-assertion paragraphs and extraction of secondary references.
+   - **Zero Wrong Invalid**: 0 wrong `invalid` verdicts across all 17 cases in both gold and extracted modes. Probe's defense-in-depth pipeline (schema validation, verbatim quote verification against source text, external dependency resolution, and strict evidence thresholds) ensures that extracted secondary claims never trigger false invalid verdicts.
+   - Further per-claim precision/recall metrics and comparison against the backup-parser baseline are tracked in `eval/compare_extraction.py` and `eval/EXTRACTION.md`.
