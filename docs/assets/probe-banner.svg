@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" width="100%" height="220">
+  <defs>
+    <linearGradient id="banner-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e14" />
+      <stop offset="50%" stop-color="#121820" />
+      <stop offset="100%" stop-color="#0f141c" />
+    </linearGradient>
+    <linearGradient id="text-glow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#58a6ff" />
+      <stop offset="50%" stop-color="#bc8cff" />
+      <stop offset="100%" stop-color="#39d353" />
+    </linearGradient>
+    <radialGradient id="glow-circle" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#58a6ff" stop-opacity="0" />
+    </radialGradient>
+    <filter id="badge-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <style>
+    @keyframes floatLight {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-4px); }
+    }
+    @keyframes pulseRing {
+      0%, 100% { opacity: 0.3; transform: scale(0.98); }
+      50% { opacity: 0.7; transform: scale(1.02); }
+    }
+    .title-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-weight: 800; font-size: 42px; letter-spacing: -0.5px; }
+    .sub-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-weight: 400; font-size: 16px; fill: #8b949e; letter-spacing: 0.2px; }
+    .chip-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 600; }
+    .floating-group { animation: floatLight 4s ease-in-out infinite; }
+    .pulse-glow { animation: pulseRing 3s ease-in-out infinite; transform-origin: center; }
+  </style>
+
+  <!-- Background Canvas -->
+  <rect width="900" height="220" rx="16" fill="url(#banner-bg)" stroke="#30363d" stroke-width="1.5" />
+
+  <!-- Ambient Light Orbs -->
+  <circle cx="200" cy="90" r="140" fill="url(#glow-circle)" class="pulse-glow" />
+  <circle cx="720" cy="110" r="120" fill="url(#glow-circle)" class="pulse-glow" />
+
+  <!-- Decorative Grid / Accent Lines -->
+  <g stroke="#ffffff" stroke-opacity="0.04" stroke-width="1">
+    <line x1="0" y1="40" x2="900" y2="40" />
+    <line x1="0" y1="90" x2="900" y2="90" />
+    <line x1="0" y1="140" x2="900" y2="140" />
+    <line x1="0" y1="190" x2="900" y2="190" />
+    <line x1="150" y1="0" x2="150" y2="220" />
+    <line x1="300" y1="0" x2="300" y2="220" />
+    <line x1="450" y1="0" x2="450" y2="220" />
+    <line x1="600" y1="0" x2="600" y2="220" />
+    <line x1="750" y1="0" x2="750" y2="220" />
+  </g>
+
+  <!-- Main Banner Content -->
+  <g class="floating-group">
+    <!-- Icon & Logo -->
+    <text x="50" y="86" class="title-text" fill="url(#text-glow)">🔎 PROBE</text>
+    <text x="245" y="68" font-family="ui-monospace, monospace" font-size="11" font-weight="700" fill="#58a6ff" letter-spacing="1">v1.0 · HACKTOBERFEST 2026</text>
+
+    <!-- Subtitle -->
+    <text x="50" y="118" class="sub-text">Evidence-Based Open Source Issue &amp; Pull Request Triage Engine</text>
+    <text x="50" y="140" class="sub-text" font-size="13" fill="#6e7681">The LLM extracts testable claims · Deterministic AST, PR diffs &amp; isolated Docker sandboxes decide</text>
+
+    <!-- Feature Chips -->
+    <g transform="translate(50, 162)">
+      <!-- Chip 1: Zero-Network Docker -->
+      <g filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="180" height="26" rx="13" fill="#161b22" stroke="#238636" stroke-width="1" />
+        <circle cx="12" cy="13" r="4" fill="#3fb950" />
+        <text x="24" y="17" class="chip-text" fill="#7ee787">Docker --network none</text>
+      </g>
+
+      <!-- Chip 2: AST Lookups -->
+      <g transform="translate(190, 0)" filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="170" height="26" rx="13" fill="#161b22" stroke="#1f6feb" stroke-width="1" />
+        <circle cx="12" cy="13" r="4" fill="#58a6ff" />
+        <text x="24" y="17" class="chip-text" fill="#a5d6ff">Deterministic AST Analysis</text>
+      </g>
+
+      <!-- Chip 3: Local Qwen3:8b -->
+      <g transform="translate(370, 0)" filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="155" height="26" rx="13" fill="#161b22" stroke="#8957e5" stroke-width="1" />
+        <circle cx="12" cy="13" r="4" fill="#bc8cff" />
+        <text x="24" y="17" class="chip-text" fill="#d2a8ff">Local qwen3:8b (Ollama)</text>
+      </g>
+
+      <!-- Chip 4: Zero Cloud Secrets -->
+      <g transform="translate(535, 0)" filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="150" height="26" rx="13" fill="#161b22" stroke="#d29922" stroke-width="1" />
+        <circle cx="12" cy="13" r="4" fill="#d29922" />
+        <text x="24" y="17" class="chip-text" fill="#e3b341">Zero Cloud AI APIs</text>
+      </g>
+    </g>
+  </g>
+</svg>
