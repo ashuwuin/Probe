@@ -193,6 +193,7 @@ Probe is evaluated against real closed issues and pull requests from major open-
 - **Zero False `invalid` Verdicts**: Real bugs are never falsely labelled invalid.
 - **No Decisive Verdict Without Evidence**: Every non-uncertain verdict requires concrete AST or execution evidence.
 - **Sandbox Network & Dependency Isolation**: Probe runs reproduction snippets inside a hardened zero-network container (`--network none`) based on `python:3.11-slim`. Real-world reproduction scripts in external projects frequently require third-party libraries (e.g. `click`, `cffi`, `rich`) that are not pre-installed in the minimal base image. Because Probe disables network access at triage time to prevent SSRF and token leakage, missing imports safely stop at `uncertain` (with reason `missing_dependency`). To evaluate deterministic decision logic with ground truth, Probe's benchmark includes a **checkable cases** group covering symbol AST checks, PR test additions/omissions, and self-contained demo reproductions.
+- **Panel Q&A & Evaluation Defenses**: See [`docs/ARCHITECTURE.md#11-panel-qa-and-evaluation-defenses`](docs/ARCHITECTURE.md#11-panel-qa-and-evaluation-defenses) for comprehensive technical explanations of real sandbox bug confirmations, infinite loop timeouts, dependency isolation, and non-Python repository safety.
 
 ---
 
