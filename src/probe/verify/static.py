@@ -15,6 +15,11 @@ Outcome policy (the verdict layer turns outcomes into verdicts):
                      searches, unsafe paths, or names that appear in the text
                      but have no static definition (dynamic definitions,
                      re-exports, C extensions).
+                     Also, by design: names the report itself says are
+                     missing, and bare names that are attributes of Python
+                     built-ins (``get``, ``replace``, ``append``). Trade-off: a
+                     made-up project function with such a common name is never
+                     contradicted.
 """
 
 from __future__ import annotations
@@ -392,6 +397,38 @@ def external_imports(path: Path, repo_modules: set[str]) -> set[str]:
     return names
 
 
+import builtins as _builtins
+
+# Attribute names of built-in types: "'str' object has no attribute 'replace'" is
+# about str, not about this repository.
+BUILTIN_ATTRIBUTES = frozenset(
+    name
+    for typ in (str, bytes, bytearray, list, tuple, dict, set, frozenset, int, float, complex, bool, object, type(None))
+    for name in dir(typ)
+    if not name.startswith("__")
+) | frozenset(n for n in dir(_builtins) if not n.startswith("_"))
+
+_MISSING_PATTERNS = (
+    r"has no attribute ['\"`]{name}['\"`]",
+    r"cannot import name ['\"`]{name}['\"`]",
+    r"name ['\"`]{name}['\"`] is not defined",
+    r"no module named ['\"`][\w.]*\b{name}['\"`]",
+    r"`?{name}`? (?:does not|doesn't|did not|didn't) exist",
+    r"`?{name}`? (?:is|was) (?:missing|removed|not found)",
+    r"(?:missing|removed|no such) (?:function|method|attribute|class)? ?`?{name}`?",
+)
+
+
+def _reported_as_missing(claim: Claim, name: str) -> bool:
+    """True when the report itself says ``name`` is missing (AttributeError, ImportError, ...).
+
+    Then "not defined in the repo" agrees with the reporter rather than contradicting them.
+    """
+    text = " ".join(t for t in (claim.quote, claim.actual or "", claim.expected or "") if t)
+    escaped = re.escape(name)
+    return any(re.search(p.format(name=escaped), text, re.IGNORECASE) for p in _MISSING_PATTERNS)
+
+
 # --------------------------------------------------------------------------
 # The checker
 # --------------------------------------------------------------------------
@@ -592,6 +629,21 @@ def check_static_symbol(repo_root: Path, claim: Claim) -> CheckResult:
         )
 
     # ---- 3. not found: decide between contradicts and inconclusive ----------
+    if _reported_as_missing(claim, name):
+        return _result(
+            claim, "inconclusive",
+            f"`{pretty}` is not defined in the repository, which matches the reported error "
+            f"(the report itself says `{name}` is missing), so its absence is not evidence against the claim.",
+            reason="reported_missing",
+        )
+    if len(parts) == 1 and name in BUILTIN_ATTRIBUTES:
+        return _result(
+            claim, "inconclusive",
+            f"`{name}` is an attribute of Python built-in types (e.g. str, list, dict), not something this "
+            "repository would define; its absence here says nothing about the claim.",
+            reason="builtin_attribute",
+        )
+
     py_files = [p for p in all_files if p.suffix in PYTHON_SUFFIXES]
     known = sorted({d.name for p in py_files for d in defs_for(p)})
 
