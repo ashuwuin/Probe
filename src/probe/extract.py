@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 import httpx
@@ -31,10 +32,18 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://localhost:11434"
 DEFAULT_MODEL = "qwen3:8b"  # must match HACKATHON.md
-MAX_INPUT_CHARS = 12_000
-MAX_CLAIMS = 20
+# Speed: real issues are long (templates, logs, tracebacks), and a local 8B model is slow on
+# long input and long output. Input is condensed (see _condense) and both sides are capped.
+MAX_INPUT_CHARS = 6_000  # characters of (condensed) issue text sent to the model
+MAX_FALLBACK_CHARS = 50_000  # the regex fallback is fast, so it reads much more
+MAX_CLAIMS = 20  # hard cap after the guardrails
+PROMPT_MAX_CLAIMS = 8  # what the model is asked for; fewer claims = shorter, faster answers
+MAX_OUTPUT_TOKENS = 1024  # Ollama `num_predict`: stops runaway generation
+CONTEXT_TOKENS = 6144  # system prompt + ~6k chars of input + output, with headroom
+KEEP_ALIVE = "30m"  # keep the model loaded between issues instead of reloading it
 REQUEST_TIMEOUT_SECONDS = 120.0
-CONTEXT_TOKENS = 8192  # Ollama's default context is too small for long issues
+CODE_BLOCK_HEAD_LINES = 25  # long code blocks/logs keep their first lines...
+CODE_BLOCK_TAIL_LINES = 10  # ...and their last ones (where tracebacks end)
 
 PR_ONLY_TYPES = {"pr_adds_tests", "pr_fixes_issue"}
 
@@ -54,6 +63,8 @@ Rules:
 - "expected" / "actual": short summaries of what should happen and what the reporter says happens.
 - "repro": code or commands copied exactly from the text that reproduce the problem, or null.
 - "issue_number": for "Fixes #120" style claims, the number 120.
+- Return at most {max_claims} claims: the most important ones. Keep "expected" and "actual" under
+  15 words each.
 - Do not judge whether claims are true. Do not invent claims. If there are none, return [].
 
 Claim types:
@@ -63,7 +74,7 @@ Claim types:
 - pr_fixes_issue: a pull request says it fixes/closes/resolves an issue (#N)
 - pr_adds_tests: a pull request says it adds or updates tests
 - version_affected: the problem is said to affect a specific version
-"""
+""".format(max_claims=PROMPT_MAX_CLAIMS)
 
 
 class _LLMClaim(BaseModel):
@@ -87,7 +98,15 @@ class _LLMOutput(BaseModel):
 
 
 class ExtractionError(Exception):
-    """The model was unreachable or returned unusable output."""
+    """The model was unreachable or returned unusable output.
+
+    `retryable` is False when asking again can't help (timeout, server down, model
+    missing): retrying a 120 s timeout just waits another 120 s for the same result.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 # --------------------------------------------------------------------------- guardrails
@@ -189,8 +208,47 @@ def _apply_guardrails(
     return kept, dropped
 
 
-def _prepare_text(text: str) -> str:
-    return text.strip()[:MAX_INPUT_CHARS]
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)|<img\b[^>]*>", re.IGNORECASE)
+_CHECKLIST_RE = re.compile(r"^[ \t]*[-*][ \t]+\[[ xX]\][^\n]*\n?", re.MULTILINE)
+_BLOCK_RE = re.compile(r"(```[^\n]*\n)(.*?)(```)", re.DOTALL)
+_BLANK_LINES_RE = re.compile(r"\n{3,}")
+TRUNCATION_MARKER = "\n[... truncated by Probe ...]\n"
+
+
+def _shorten_block(match: re.Match) -> str:
+    lines = match.group(2).split("\n")
+    keep = CODE_BLOCK_HEAD_LINES + CODE_BLOCK_TAIL_LINES
+    if len(lines) <= keep + 1:
+        return match.group(0)
+    omitted = len(lines) - keep
+    body = "\n".join(
+        lines[:CODE_BLOCK_HEAD_LINES]
+        + [f"[... {omitted} lines omitted by Probe ...]"]
+        + lines[-CODE_BLOCK_TAIL_LINES:]
+    )
+    return f"{match.group(1)}{body}{match.group(3)}"
+
+
+def _condense(text: str) -> str:
+    """Shrink an issue for the model without losing its claims.
+
+    Drops what carries no checkable claim (template HTML comments, images, checklists),
+    trims long code blocks/logs to their start and end (the end of a traceback names the
+    crash site), then caps the length while keeping the start AND the end of the text.
+    Quotes are still checked against the original text, so nothing here can make an
+    invented quote pass.
+    """
+    text = _HTML_COMMENT_RE.sub("", text)
+    text = _IMAGE_RE.sub("", text)
+    text = _CHECKLIST_RE.sub("", text)
+    text = _BLOCK_RE.sub(_shorten_block, text)
+    text = _BLANK_LINES_RE.sub("\n\n", text).strip()
+    if len(text) > MAX_INPUT_CHARS:
+        keep = MAX_INPUT_CHARS - len(TRUNCATION_MARKER)
+        head = keep * 7 // 10
+        text = text[:head] + TRUNCATION_MARKER + text[len(text) - (keep - head) :]
+    return text
 
 
 # --------------------------------------------------------------------------- LLM path
@@ -226,7 +284,12 @@ class OllamaExtractor:
             "stream": False,
             "think": False,
             "format": _LLMOutput.model_json_schema(),  # Ollama constrains output to this
-            "options": {"temperature": 0, "num_ctx": CONTEXT_TOKENS},
+            "keep_alive": KEEP_ALIVE,
+            "options": {
+                "temperature": 0,
+                "num_ctx": CONTEXT_TOKENS,
+                "num_predict": MAX_OUTPUT_TOKENS,
+            },
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"<<<BEGIN_REPORT>>>\n{text}\n<<<END_REPORT>>>"},
@@ -242,9 +305,19 @@ class OllamaExtractor:
             response.raise_for_status()
             content = response.json()["message"]["content"]
         except httpx.HTTPStatusError as exc:
-            raise ExtractionError(f"model server returned {exc.response.status_code}") from exc
+            status = exc.response.status_code
+            # 5xx can be transient (e.g. out of memory while loading); 4xx (model missing) is not.
+            raise ExtractionError(
+                f"model server returned {status}", retryable=status >= 500
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise ExtractionError(
+                f"model timed out after {self.timeout:.0f}s", retryable=False
+            ) from exc
         except httpx.HTTPError as exc:
-            raise ExtractionError(f"model server unreachable ({type(exc).__name__})") from exc
+            raise ExtractionError(
+                f"model server unreachable ({type(exc).__name__})", retryable=False
+            ) from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise ExtractionError("unexpected response shape from model server") from exc
 
@@ -467,24 +540,33 @@ def extract_claims(
     rules must not turn them into `invalid` (see docs/ARCHITECTURE.md §5).
     """
     extractor = extractor or OllamaExtractor()
-    text = _prepare_text(text)
-    if not text:
+    original = text.strip()
+    if not original:
         return ClaimsResponse(claims=[], model=extractor.model, confidence="low")
+    condensed = _condense(original)
 
     for attempt in range(1, retries + 2):
+        started = time.monotonic()
         try:
-            raw = extractor.extract_raw(text)
+            raw = extractor.extract_raw(condensed)
         except ExtractionError as exc:
             log.warning("claim extraction attempt %d failed: %s", attempt, exc)
+            if not exc.retryable:
+                break
             continue
-        claims, dropped = _apply_guardrails(raw, text, is_pull_request=is_pull_request)
+        log.info(
+            "extracted %d raw claims with %s in %.1fs (%d of %d chars sent)",
+            len(raw), extractor.model, time.monotonic() - started, len(condensed), len(original),
+        )
+        # Guardrails check against the ORIGINAL text, so condensing can't let anything through.
+        claims, dropped = _apply_guardrails(raw, original, is_pull_request=is_pull_request)
         return ClaimsResponse(
             claims=claims, method="llm", model=extractor.model, dropped_claims=dropped
         )
 
     log.warning("model unavailable; using regex fallback (low confidence)")
     return ClaimsResponse(
-        claims=regex_extract(text, is_pull_request=is_pull_request),
+        claims=regex_extract(original[:MAX_FALLBACK_CHARS], is_pull_request=is_pull_request),
         method="regex_fallback",
         model=extractor.model,
         confidence="low",
