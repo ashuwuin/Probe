@@ -25,9 +25,6 @@ BADGES = {
     "uncertain": "⚠️ **Uncertain**",
 }
 STATUS_ORDER = ("confirmed", "cannot-reproduce", "invalid", "uncertain")
-# Used only when the caller doesn't pass `overall`. Same precedence as
-# verdict.get_overall_verdict: invalid > confirmed > cannot-reproduce > uncertain.
-OVERALL_PRECEDENCE = ("invalid", "confirmed", "cannot-reproduce", "uncertain")
 _CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 
 MAX_QUOTE_CHARS = 120
@@ -72,17 +69,6 @@ def _summary(verdicts: list[VerdictResult]) -> str:
     return f"Checked {len(verdicts)} {noun}: " + " · ".join(parts)
 
 
-def _overall(verdicts: list[VerdictResult]) -> tuple[str, str | None]:
-    """(status, confidence) for the whole report when the caller didn't decide it."""
-    if not verdicts:
-        return "uncertain", None
-    status = next(s for s in OVERALL_PRECEDENCE if any(v.status == s for v in verdicts))
-    confidence = max(
-        (v.confidence for v in verdicts if v.status == status), key=_CONFIDENCE_RANK.__getitem__
-    )
-    return status, confidence
-
-
 def _overall_line(status: str, confidence: str | None, summary: str | None) -> str:
     badge = BADGES.get(status, _cell(status, 30))
     line = f"**Overall:** {badge}"
@@ -113,29 +99,25 @@ def generate_markdown_report(
     repo: str,
     issue_number: int,
     *,
-    extraction: ClaimsResponse | None = None,
-    overall: str | None = None,
+    overall: str,
     overall_summary: str | None = None,
+    extraction: ClaimsResponse | None = None,
 ) -> str:
     """Build the Markdown comment for `repo#issue_number`.
 
-    `overall` / `overall_summary`: the report-level verdict, normally from
-    `verdict.get_overall_verdict(verdicts)`. If `overall` is omitted it is worked out
-    from `verdicts` with the same precedence.
+    `overall` / `overall_summary`: the report-level verdict, i.e.
+    `verdict.get_overall_verdict(verdicts, claims)`. It is required so the report never
+    re-derives the verdict with its own (possibly outdated) rule.
     `extraction` (optional) adds a footer saying which model extracted the claims,
     whether the regex fallback was used, and how many claims were discarded.
     """
-    if overall is None:
-        status, confidence = _overall(verdicts)
-    else:
-        status = overall
-        matching = [v.confidence for v in verdicts if v.status == overall]
-        confidence = max(matching, key=_CONFIDENCE_RANK.__getitem__) if matching else None
+    matching = [v.confidence for v in verdicts if v.status == overall]
+    confidence = max(matching, key=_CONFIDENCE_RANK.__getitem__) if matching else None
     lines = [
         REPORT_MARKER,
         _title(repo, issue_number),
         "",
-        _overall_line(status, confidence, overall_summary),
+        _overall_line(overall, confidence, overall_summary),
         "",
     ]
 
