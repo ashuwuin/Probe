@@ -79,7 +79,18 @@
         "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
         "quote": "When debug logging is enabled, user:password appears in debug logs"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 7.74,
+      "dropped_claims": [],
+      "is_pull_request": false,
+      "text_source": "case_text",
+      "text": "Security: parse_url_v2() leaks proxy credentials\n\n`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them. When debug logging is enabled, user:password appears in debug logs.",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "checkable-02-pr-tests",
@@ -167,7 +178,18 @@
         "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py; new tests include `def test_invalid_url():`.",
         "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 5.97,
+      "dropped_claims": [],
+      "is_pull_request": true,
+      "text_source": "case_text",
+      "text": "Raise InvalidUrl if host starts with '.' character\n\nI've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`.",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "checkable-03-pr-no-tests",
@@ -215,7 +237,18 @@
         "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
         "quote": "I have added unit tests for the helper methods."
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 2.72,
+      "dropped_claims": [],
+      "is_pull_request": true,
+      "text_source": "case_text",
+      "text": "Update utils helpers\n\nI have added unit tests for the helper methods.",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "checkable-04-demo-repro",
@@ -277,7 +310,18 @@
         "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 2, in <module>\nAssertionError: 0.0",
         "quote": "apply_discount returns the wrong price"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 6.79,
+      "dropped_claims": [],
+      "is_pull_request": false,
+      "text_source": "case_text",
+      "text": "apply_discount returns the wrong price\n\n`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0.\n\n```python\nfrom shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)\n```",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "checkable-05-demo-clean",
@@ -361,7 +405,18 @@
         "evidence": "`format_price` is defined in `shop/billing.py` at line 11 (function).",
         "quote": "from shop.billing import format_price"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 4.75,
+      "dropped_claims": [],
+      "is_pull_request": false,
+      "text_source": "case_text",
+      "text": "format_price crashes on negative amounts\n\nCalling `format_price()` with a negative refund amount crashes the checkout page.\n\n```python\nfrom shop.billing import format_price\n\nprint(format_price(-5))\n```",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "loguru-1448",
@@ -481,7 +536,24 @@
         "evidence": "Symbol verified (`write` is defined in `loguru/_file_sink.py` at line 201 (method).), but claim requires reproduction steps to confirm behavior",
         "quote": "thread A can pass the rotation check while thread B rotates the file and sets _file to a new object (or None during transition)."
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 10.98,
+      "dropped_claims": [
+        {
+          "type": "version_affected",
+          "quote": "Related to #916 and #1089 but those are about multi-process, not multi-thread.",
+          "reason": "version_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "FileSink write/rotation race in multi-threaded logging\n\n_file_sink.py — write() checks the rotation condition and then calls self._file.write(message) without a lock. In multi-threaded use, thread A can pass the rotation check while thread B rotates the file and sets _file to a new object (or None during transition). Thread A then writes to the wrong file or crashes.\n\nRelated to #916 and #1089 but those are about multi-process, not multi-thread.",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "loguru-1471",
@@ -603,7 +675,44 @@
         "evidence": "`get_ctime_linux` is not defined anywhere in the repository. Did you mean `get_ctime` in `loguru/_ctime_functions.py` at line 57? It is not defined in the named file `loguru/_ctime_functions.py`.",
         "quote": "FileNotFoundError: [Errno 2] No such file or directory: '.../test.log'"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 24.17,
+      "dropped_claims": [
+        {
+          "type": "version_affected",
+          "quote": "Loguru version: 0.7.3",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_fixes_issue",
+          "quote": "Proposed Fix: Wrap the rotation-rename block in _terminate_file() with a try/except OSError",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_fixes_issue",
+          "quote": "Proposed Fix: Wrap the rotation-rename block in _terminate, ",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_fixes_issue",
+          "quote": "Proposed Fix: Wrap the rotation-rename block in _terminate_file() with a try/except OSError",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "security_vuln",
+          "quote": "race condition in _terminate_file() that was previously reported in #519 and #220",
+          "reason": "quote_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "FileNotFoundError during rotation when log file is deleted externally\n\n### Summary\nWhen a log file is deleted externally (e.g., by a temporary file cleaner, or due to a long system sleep/wake cycle) while Loguru still has an open file handle, the next log message that triggers rotation causes a `FileNotFoundError` crash inside the file sink. This is a race condition in `_terminate_file()` that was previously reported in #519 and #220 but was never fully fixed.\n\n### Environment\n- **Python version:** 3.13\n- **Loguru version:** 0.7.3\n- **Operating system:** Linux (Debian 13)\n- **Context:** Long-running CLI application (kimi-cli) with daily log rotation\n\n### Minimal Reproducible Example\n\n```python\nfrom loguru import logger\nimport tempfile\nfrom pathlib import Path\n\nwith tempfile.TemporaryDirectory() as tmpdir:\n    filepath = Path(tmpdir) / \"test.log\"\n    logger.add(filepath, rotation=0, format=\"{message}\", catch=False)\n    logger.info(\"1\")\n    filepath.unlink()  # Simulate external deletion while handle is still open\n    logger.info(\"2\")   # Triggers rotation → FileNotFoundError\n```\n\n### Traceback\n\n```\n--- Logging error in Loguru Handler #1 ---\nTraceback (most recent call last):\n  File \".../loguru/_ctime_functions.py\", line 36, in get_ctime_linux\n    return float(os.getxattr(filepath, b\"user.loguru_crtime\"))\nFileNotFoundError: [Errno 2] No such file or directory: '.../test.log'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \".../loguru/_handler.py\", line 206, in emit\n    self._sink.write(str_record)\n  File \".../loguru/_file_sink.py\", line 204, in write\n    self._terminate_file(is_rotating=True)\n  File \".../loguru/_file_sink.py\", line 273, in _terminate_file\n    creation_time = get_ctime(old_path)\n  File \".../loguru/_ctime_functions.py\", line 38, in get_ctime_linux\n    return os.stat(filepath).st_mtime\nFileNotFoundError: [Errno 2] No such file or directory: '.../test.log'\n```\n\n### Root Cause\n\nIn `FileSink._terminate_file()`, during rotation:\n\n1. `_close_file()` closes the file handle.\n2. `get_ctime(old_path)` is called to get the creation time for generating the rotated filename.\n3. If the file was deleted externally between steps 1 and 2, `get_ctime()` crashes because all its fallback paths (`os.getxattr`, `os.stat`) assume the file still exists.\n\nThe same crash can also happen at `os.rename(old_path, renamed_path)` if the file disappears between `get_ctime` and `rename`.\n\n### Proposed Fix\n\nWrap the rotation-rename block in `_terminate_file()` with a `try/except OSError`. If the file is gone, skip the rename, set `old_path = None` (so compression is also skipped), and proceed to create the new log file. This allows logging to continue gracefully instead of crashing the handler.\n\n### Related Issues\n- #519 — Same traceback, closed because reporter could not reproduce after removing async code.\n- #220 — Same traceback, closed because reporter's issue was resolved by using `enqueue=True` with multiprocessing.\n\nNeither issue addressed the underlying race condition in the file sink itself.\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "poetry-3610",
@@ -746,7 +855,39 @@
         "evidence": "`Metadata` has no static definition, but the name appears in `poetry/publishing/uploader.py` (possibly an import, dynamic definition or extension module).",
         "quote": "After this new line, after `Summary`, everything else is treated as package description, I guess."
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 26.55,
+      "dropped_claims": [
+        {
+          "type": "symbol_exists",
+          "quote": "description = \"\"\"\\nPoetry bug repro.\\n\"\"\"",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "It won't install any dependencies, in this case it won't install `requests`.",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "version_affected",
+          "quote": "Poetry version: 1.1.4",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_adds_tests",
+          "quote": "I think, the issue is that when `.dist-info/METADATA` file is generated, it creates an empty line like this:",
+          "reason": "pr_claim_in_issue"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "Dependencies won't install if description contains new lines\n\n<!--\r\n  Hi there! Thank you for discovering and submitting an issue.\r\n\r\n  Before you submit this; let's make sure of a few things.\r\n  Please make sure the following boxes are ticked if they are correct.\r\n  If not, please try and fulfill these first.\r\n-->\r\n\r\n<!-- Checked checkbox should look like this: [x] -->\r\n- [x] I am on the [latest](https://github.com/python-poetry/poetry/releases/latest) Poetry version.\r\n- [x] I have searched the [issues](https://github.com/python-poetry/poetry/issues) of this repo and believe that this is not a duplicate.\r\n- [x] If an exception occurs when executing a command, I executed it again in debug mode (`-vvv` option).\r\n\r\n<!--\r\n  Once those are done, if you're able to fill in the following list with your information,\r\n  it'd be very helpful to whoever handles the issue.\r\n-->\r\n\r\n- **OS version and name**:  Manjaro Linux 20.2.1\r\n- **Poetry version**: 1.1.4\r\n\r\n## Issue\r\n\r\nWhen I create `pyproject.toml` file, that looks like this:\r\n\r\n```toml\r\n[tool.poetry]\r\nname = \"poetry-bug-repro\"\r\nversion = \"0.1.0\"\r\nauthors = [\"Me <me@example.com>\"]\r\ndescription = \"\"\"\\\r\nPoetry bug repro.\r\n\"\"\"\r\n[tool.poetry.dependencies]\r\npython = \"^3.9\"\r\nrequests = \"*\"\r\n```\r\n\r\n(Note the new line in the description). Then, when I `poetry build` it, and try to install wheel package, it won't install any dependencies, in this case it won't install `requests`.\r\n\r\nBut if I replace description to:\r\n\r\n```toml\r\ndescription = \"Poetry bug repro.\"\r\n```\r\n\r\nThen dependencies are installed as expected.\r\n\r\nI think, the issue is that when `.dist-info/METADATA` file is generated, it creates an empty line like this:\r\n\r\n```yaml\r\nMetadata-Version: 2.1\r\nName: poetry-bug-repro\r\nVersion: 0.1.0\r\nSummary: Poetry bug repro.\r\n\r\nAuthor: Me\r\nAuthor-email: me@example.com\r\nRequires-Python: >=3.9,<4.0\r\nRequires-Dist: requests\r\n```\r\n\r\nAfter this new line, after `Summary`, everything else is treated as package description, I guess.",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "poetry-6627",
@@ -778,7 +919,54 @@
         "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "This is happened after Poetry 1.2"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 28.86,
+      "dropped_claims": [
+        {
+          "type": "bug_behavior",
+          "quote": "poetry install will give me following error",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "symbol_exists",
+          "quote": "Both keyword.py and data_model.py is project business logic",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "symbol_exists",
+          "quote": "Both keyword.py and data_model.py is project business logic",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_fixes_issue",
+          "quote": "After moving files to src directory, poetry install works",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "poetry install will give me following error",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "symbol_exists",
+          "quote": "The project usage is: Download or clone repo. cd into project and run poetry install",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "poetry install will give me following error",
+          "reason": "quote_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "`poetry install` incorrectly resolve python files in current folder\n\n<!--\r\n    Hi there! Thank you for submitting a bug report!\r\n\r\n    Before you submit your issue, please review and follow the instructions at\r\n    https://python-poetry.org/docs/contributing/#reporting-bugs. Fully fill out the template below; insufficient\r\n    information or bad reproduction instructions will impair the ability of others to help you.\r\n-->\r\n\r\n<!-- All the below information must be provided for others to understand and help with your issue. -->\r\n- **Poetry version**: 1.2.1 or 1.2.0\r\n- **Python version**: 3.8.10 or 3.9.4\r\n- **OS version and name**: Ubuntu 20.04 (WSL) or Windows 10\r\n- **pyproject.toml**: https://github.com/hms5232/0ver-department-keyword\r\n\r\n<!-- All the below steps should be completed before submitting your issue. Checked checkbox should look like this: [x] -->\r\n- [x] I am on the [latest](https://github.com/python-poetry/poetry/releases/latest) stable Poetry version, installed using a recommended method.\r\n- [x] I have searched the [issues](https://github.com/python-poetry/poetry/issues) of this repo and believe that this is not a duplicate.\r\n- [x] I have consulted the [FAQ](https://python-poetry.org/docs/faq/) and [blog](https://python-poetry.org/blog/) for any relevant entries or release notes.\r\n- [ ] If an exception occurs when executing a command, I executed it again in debug mode (`-vvv` option) and have included the output below.\r\n\r\n## Issue\r\n<!-- Now feel free to write your issue, and please be as descriptive as possible! Make sure to include detailed reproduction steps. -->\r\n<!-- Thanks again 🙌 ❤ -->\r\n\r\nMy project is open source, so I directly put repo url in pyproject.toml item.\r\n\r\nThe project usage is:\r\n\r\n1. Download or clone repo.\r\n2. `cd` into project and run `poetry install`\r\n\r\nbut, the `poetry install` will give me following error:\r\n\r\n```\r\nCommand ['/home/hhm/.cache/pypoetry/virtualenvs/0ver-department-keyword-d1mZarpb-py3.8/bin/python', '-W', 'ignore', '-'] errored with the following return code 1, and output:\r\nTraceback (most recent call last):\r\n  File \"<stdin>\", line 1, in <module>\r\n  File \"/usr/lib/python3.8/json/__init__.py\", line 106, in <module>\r\n    from .decoder import JSONDecoder, JSONDecodeError\r\n  File \"/usr/lib/python3.8/json/decoder.py\", line 3, in <module>\r\n    import re\r\n  File \"/usr/lib/python3.8/re.py\", line 127, in <module>\r\n    import functools\r\n  File \"/usr/lib/python3.8/functools.py\", line 18, in <module>\r\n    from collections import namedtuple\r\n  File \"/usr/lib/python3.8/collections/__init__.py\", line 22, in <module>\r\n    from keyword import iskeyword as _iskeyword\r\n  File \"/home/hhm/0ver-department-keyword/keyword.py\", line 8, in <module>\r\n    import data_model\r\n  File \"/home/hhm/0ver-department-keyword/data_model.py\", line 4, in <module>\r\n    from ckiptagger import data_utils\r\nModuleNotFoundError: No module named 'ckiptagger'\r\ninput was : import json\r\nimport sys\r\n\r\nprint(json.dumps(sys.path))\r\n```\r\n\r\nBoth `keyword.py` and `data_model.py` is project business logic, and depend on `ckiptagger` package to work. Poetry resolve those files and I don't know why.\r\n\r\nCurrent tree:\r\n\r\n```\r\nhms5232@wsl:~/0ver-department-keyword$ tree\r\n.\r\n├── LICENSE\r\n├── README.md\r\n├── __pycache__\r\n│   ├── data_model.cpython-38.pyc\r\n│   └── keyword.cpython-38.pyc\r\n├── data_model.py\r\n├── keyword.py\r\n├── poetry.lock\r\n├── pyproject.toml\r\n└── school_data.csv\r\n\r\n1 directory, 9 files\r\n```\r\n\r\nAfter googling and getting nothing, I try to change project directory as [`poetry new`](https://python-poetry.org/docs/basic-usage/#project-setup): `mkdir src && mv *.py src/`, and `poetry install` works!\r\n\r\n```\r\nhms5232@wsl:~/0ver-department-keyword$ tree\r\n.\r\n├── LICENSE\r\n├── README.md\r\n├── __pycache__\r\n│   ├── data_model.cpython-38.pyc\r\n│   └── keyword.cpython-38.pyc\r\n├── poetry.lock\r\n├── pyproject.toml\r\n├── school_data.csv\r\n└── src\r\n    ├── data_model.py\r\n    └── keyword.py\r\n\r\n2 directories, 9 files\r\n```\r\n\r\nThis is happened after Poetry 1.2. If I remember correctly, Poetry 1.1 had worked well. I'm not sure this is a bug or not, or maybe something (ex: pre-releasing note) I missing?\r\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "poetry-7033",
@@ -828,7 +1016,39 @@
         "evidence": "`parse` is not defined anywhere in the repository. Did you mean `RunArgvInput._parse` in `src/poetry/console/io/inputs/run_argv_input.py` at line 56? `poetry.core.vcs.git.ParsedUrl` was not found.",
         "quote": "Poetry fails to parse the URL when adding git dependencies having escaped characters in the repository path."
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 16.36,
+      "dropped_claims": [
+        {
+          "type": "version_affected",
+          "quote": "Poetry version: 1.2.2",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "symbol_exists",
+          "quote": "The problem seems to be in poetry.core.vcs.git.ParsedUrl.parse",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_fixes_issue",
+          "quote": "I tried to extend the pattern (PATH = r\"[%%\\w~.\\-/\\\\$]+\") and the command above finishes as expected.",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "The command poetry add git+ssh://git@ssh.dev.azure.com:v3/myrepo/my%20repo/mylib#main -vvv fails to find a pattern matching he URL",
+          "reason": "quote_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "Poetry fails to parse repositories URL with escaped characters\n\n<!--\r\n    Hi there! Thank you for submitting a bug report!\r\n\r\n    Before you submit your issue, please review and follow the instructions at\r\n    https://python-poetry.org/docs/contributing/#reporting-bugs. Fully fill out the template below; insufficient\r\n    information or bad reproduction instructions will impair the ability of others to help you.\r\n-->\r\n\r\n<!-- All the below information must be provided for others to understand and help with your issue. -->\r\n- **Poetry version**: 1.2.2\r\n- **Python version**: 3.8.10\r\n- **OS version and name**: Ubuntu 22.04\r\n\r\n<!-- All the below steps should be completed before submitting your issue. Checked checkbox should look like this: [x] -->\r\n- [x] I am on the [latest](https://github.com/python-poetry/poetry/releases/latest) stable Poetry version, installed using a recommended method.\r\n- [x] I have searched the [issues](https://github.com/python-poetry/poetry/issues) of this repo and believe that this is not a duplicate.\r\n- [x] I have consulted the [FAQ](https://python-poetry.org/docs/faq/) and [blog](https://python-poetry.org/blog/) for any relevant entries or release notes.\r\n- [x] If an exception occurs when executing a command, I executed it again in debug mode (`-vvv` option) and have included the output below.\r\n\r\n## Issue\r\nPoetry fails to parse the URL when adding git dependencies having escaped characters in the repository path.\r\n\r\nThe command\r\n`poetry add git+ssh://git@ssh.dev.azure.com:v3/myrepo/my%20repo/mylib#main -vvv`\r\nfails to find a pattern matching he URL (see the output below).\r\nThe problem seems to be in `poetry.core.vcs.git.ParsedUrl.parse` since the path regex `PATH = r\"[\\w~.\\-/\\\\\\$]+\"` does not capture `%` symbols.\r\nI tried to extend the pattern (`PATH = r\"[%\\w~.\\-/\\\\\\$]+\"`) and the command above finishes as expected.\r\n\r\nCommand output.\r\n```\r\nLoading configuration file /home/mauro/.config/pypoetry/config.toml\r\nLoading configuration file /home/mauro/.config/pypoetry/auth.toml\r\nUsing virtualenv: /home/mauro/.cache/pypoetry/virtualenvs/ompi-3Z0XuDiv-py3.8\r\nProject environment contains an empty path in sys_path, ignoring.\r\n\r\n  Stack trace:\r\n\r\n  14  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/cleo/application.py:329 in run\r\n       327│ \r\n       328│             try:\r\n     → 329│                 exit_code = self._run(io)\r\n       330│             except Exception as e:\r\n       331│                 if not self._catch_exceptions:\r\n\r\n  13  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/console/application.py:185 in _run\r\n       183│         self._load_plugins(io)\r\n       184│ \r\n     → 185│         exit_code: int = super()._run(io)\r\n       186│         return exit_code\r\n       187│ \r\n\r\n  12  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/cleo/application.py:423 in _run\r\n       421│             io.input.set_stream(stream)\r\n       422│ \r\n     → 423│         exit_code = self._run_command(command, io)\r\n       424│         self._running_command = None\r\n       425│ \r\n\r\n  11  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/cleo/application.py:465 in _run_command\r\n       463│ \r\n       464│         if error is not None:\r\n     → 465│             raise error\r\n       466│ \r\n       467│         return event.exit_code\r\n\r\n  10  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/cleo/application.py:449 in _run_command\r\n       447│ \r\n       448│             if event.command_should_run():\r\n     → 449│                 exit_code = command.run(io)\r\n       450│             else:\r\n       451│                 exit_code = ConsoleCommandEvent.RETURN_CODE_DISABLED\r\n\r\n   9  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/cleo/commands/base_command.py:119 in run\r\n       117│         io.input.validate()\r\n       118│ \r\n     → 119│         status_code = self.execute(io)\r\n       120│ \r\n       121│         if status_code is None:\r\n\r\n   8  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/cleo/commands/command.py:83 in execute\r\n        81│ \r\n        82│         try:\r\n     →  83│             return self.handle()\r\n        84│         except KeyboardInterrupt:\r\n        85│             return 1\r\n\r\n   7  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/console/commands/add.py:158 in handle\r\n       156│             return 0\r\n       157│ \r\n     → 158│         requirements = self._determine_requirements(\r\n       159│             packages,\r\n       160│             allow_prereleases=self.option(\"allow-prereleases\"),\r\n\r\n   6  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/console/commands/init.py:357 in _determine_requirements\r\n       355│ \r\n       356│         result = []\r\n     → 357│         for requirement in self._parse_requirements(requires):\r\n       358│             if \"git\" in requirement or \"url\" in requirement or \"path\" in requirement:\r\n       359│                 result.append(requirement)\r\n\r\n   5  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/console/commands/init.py:416 in _parse_requirements\r\n       414│             cwd = Path.cwd()\r\n       415│ \r\n     → 416│         return [\r\n       417│             parse_dependency_specification(\r\n       418│                 requirement=requirement,\r\n\r\n   4  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/console/commands/init.py:417 in <listcomp>\r\n       415│ \r\n       416│         return [\r\n     → 417│             parse_dependency_specification(\r\n       418│                 requirement=requirement,\r\n       419│                 env=self.env if isinstance(self, EnvCommand) else None,\r\n\r\n   3  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/utils/dependency_specification.py:216 in parse_dependency_specification\r\n       214│ \r\n       215│     specification = (\r\n     → 216│         _parse_dependency_specification_url(requirement, env=env)\r\n       217│         or _parse_dependency_specification_path(requirement, cwd=cwd)\r\n       218│         or _parse_dependency_specification_simple(requirement)\r\n\r\n   2  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/utils/dependency_specification.py:68 in _parse_dependency_specification_url\r\n        66│ \r\n        67│     if url_parsed.scheme in [\"git+https\", \"git+ssh\"]:\r\n     →  68│         return _parse_dependency_specification_git_url(requirement, env)\r\n        69│ \r\n        70│     if url_parsed.scheme in [\"http\", \"https\"]:\r\n\r\n   1  ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/utils/dependency_specification.py:37 in _parse_dependency_specification_git_url\r\n        35│     from poetry.core.vcs.git import ParsedUrl\r\n        36│ \r\n     →  37│     parsed = ParsedUrl.parse(requirement)\r\n        38│     url = Git.normalize_url(requirement)\r\n        39│ \r\n\r\n  ValueError\r\n\r\n  Invalid git url \"git+ssh://git@ssh.dev.azure.com:v3/myrepo/my%20repo/mylib#main\"\r\n\r\n  at ~/.local/share/pypoetry/venv/lib/python3.8/site-packages/poetry/core/vcs/git.py:132 in parse\r\n      128│                     groups.get(\"rev\"),\r\n      129│                     groups.get(\"rev_subdirectory\") or groups.get(\"subdirectory\"),\r\n      130│                 )\r\n      131│ \r\n    → 132│         raise ValueError(f'Invalid git url \"{url}\"')\r\n      133│ \r\n      134│     @property\r\n      135│     def url(self) -> str:\r\n      136│         protocol = f\"{self.protocol}://\" if self.protocol else \"\"\r\n```\r\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "poetry-7268",
@@ -970,7 +1190,29 @@
         "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "H is forbidden"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 14.5,
+      "dropped_claims": [
+        {
+          "type": "symbol_exists",
+          "quote": "M depends on H (tag=4.5.0)",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "symbol_exists",
+          "quote": "M depends on P (tag=4.8.0)",
+          "reason": "quote_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "Version solving system implementation issue\n\nPoetry version: 1.1.15\r\n\r\nSince using `poetry` with GitHub source code to resolve cascade dependencie panic with next output:\r\n\r\n```\r\n  SolverProblemError\r\n\r\n  Because H (rev 4.5.0) depends on P (tag 4.8.0)\r\n   and M depends on P (tag 4.8.0), H is forbidden.\r\n  So, because M depends on H (tag 4.5.0), version solving failed.\r\n```\r\n\r\nLet's see version resolving charts:\r\n\r\n```\r\n  M (main)\r\n  +--P (tag=4.8.0)\r\n  +--H (tag=4.5.0)\r\n     +--P (tag=4.8.0)\r\n```\r\n\r\nLook P is same in our cases but provided as source code and `poetry` solve as different version.",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "poetry-7465",
@@ -1042,7 +1284,18 @@
         "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "Error code 1"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 6.49,
+      "dropped_claims": [],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "9 testcases fail\n\n```\r\n=============================================================================================== FAILURES ================================================================================================\r\n___________________________________________________________________________________ test_env_no_pip[flags6-packages6] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags6_package0'), poetry = <poetry.poetry.Poetry object at 0x96735d550>\r\nflags = {'no-pip': True, 'no-setuptools': True, 'no-wheel': False}, packages = {'wheel'}\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'tkinter', 'wheel'} == {'wheel'}\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - {'wheel'}\r\nE         + {'tkinter', 'wheel'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n___________________________________________________________________________________ test_env_no_pip[flags5-packages5] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags5_package0'), poetry = <poetry.poetry.Poetry object at 0x96aef5880>\r\nflags = {'no-pip': True, 'no-setuptools': False, 'no-wheel': True}, packages = {'setuptools'}\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'setuptools', 'tkinter'} == {'setuptools'}\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - {'setuptools'}\r\nE         + {'setuptools', 'tkinter'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n___________________________________________________________________________________ test_env_no_pip[flags0-packages0] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags0_package0'), poetry = <poetry.poetry.Poetry object at 0x96ca6a4f0>\r\nflags = {'no-pip': False, 'no-setuptools': True, 'no-wheel': False}, packages = {'pip', 'wheel'}\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'pip', 'tkinter', 'wheel'} == {'pip', 'wheel'}\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - {'pip', 'wheel'}\r\nE         + {'tkinter', 'pip', 'wheel'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n________________________________________________________________________________ test_env_finds_the_correct_executables _________________________________________________________________________________\r\n\r\ntmp_dir = '/tmp/poetry__uxi1dbk', manager = <poetry.utils.env.EnvManager object at 0x96852cf70>\r\n\r\n    def test_env_finds_the_correct_executables(tmp_dir: str, manager: EnvManager):\r\n        venv_path = Path(tmp_dir) / \"Virtual Env\"\r\n        manager.build_venv(str(venv_path), with_pip=True)\r\n        venv = VirtualEnv(venv_path)\r\n    \r\n        default_executable = expected_executable = f\"python{'.exe' if WINDOWS else ''}\"\r\n        default_pip_executable = expected_pip_executable = f\"pip{'.exe' if WINDOWS else ''}\"\r\n        major_executable = f\"python{sys.version_info[0]}{'.exe' if WINDOWS else ''}\"\r\n        major_pip_executable = f\"pip{sys.version_info[0]}{'.exe' if WINDOWS else ''}\"\r\n    \r\n        if (\r\n            venv._bin_dir.joinpath(default_executable).exists()\r\n            and venv._bin_dir.joinpath(major_executable).exists()\r\n        ):\r\n            venv._bin_dir.joinpath(default_executable).unlink()\r\n            expected_executable = major_executable\r\n    \r\n        if (\r\n            venv._bin_dir.joinpath(default_pip_executable).exists()\r\n            and venv._bin_dir.joinpath(major_pip_executable).exists()\r\n        ):\r\n            venv._bin_dir.joinpath(default_pip_executable).unlink()\r\n            expected_pip_executable = major_pip_executable\r\n    \r\n>       venv = VirtualEnv(venv_path)\r\n\r\ntests/utils/test_env.py:1352: \r\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\r\n../stage/usr/local/lib/python3.9/site-packages/poetry/utils/env.py:1716: in __init__\r\n    output = self.run_python_script(GET_BASE_PREFIX)\r\n../stage/usr/local/lib/python3.9/site-packages/poetry/utils/env.py:1500: in run_python_script\r\n    return self.run(\r\n../stage/usr/local/lib/python3.9/site-packages/poetry/utils/env.py:1492: in run\r\n    return self._run(cmd, **kwargs)\r\n../stage/usr/local/lib/python3.9/site-packages/poetry/utils/env.py:1776: in _run\r\n    return super()._run(cmd, **kwargs)\r\n../stage/usr/local/lib/python3.9/site-packages/poetry/utils/env.py:1523: in _run\r\n    output = subprocess.run(\r\n/usr/local/lib/python3.9/subprocess.py:505: in run\r\n    with Popen(*popenargs, **kwargs) as process:\r\n/usr/local/lib/python3.9/subprocess.py:951: in __init__\r\n    self._execute_child(args, executable, preexec_fn, close_fds,\r\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\r\n\r\nself = <Popen: returncode: 255 args: ['python3', '-I', '-W', 'ignore', '-']>, args = ['python3', '-I', '-W', 'ignore', '-'], executable = b'python3', preexec_fn = None, close_fds = True, pass_fds = ()\r\ncwd = None, env = None, startupinfo = None, creationflags = 0, shell = False, p2cread = 13, p2cwrite = 14, c2pread = 15, c2pwrite = 16, errread = -1, errwrite = 16, restore_signals = True, gid = None\r\ngids = None, uid = None, umask = -1, start_new_session = False\r\n\r\n    def _execute_child(self, args, executable, preexec_fn, close_fds,\r\n                       pass_fds, cwd, env,\r\n                       startupinfo, creationflags, shell,\r\n                       p2cread, p2cwrite,\r\n                       c2pread, c2pwrite,\r\n                       errread, errwrite,\r\n                       restore_signals,\r\n                       gid, gids, uid, umask,\r\n                       start_new_session):\r\n        \"\"\"Execute program (POSIX version)\"\"\"\r\n    \r\n        if isinstance(args, (str, bytes)):\r\n            args = [args]\r\n        elif isinstance(args, os.PathLike):\r\n            if shell:\r\n                raise TypeError('path-like args is not allowed when '\r\n                                'shell is true')\r\n            args = [args]\r\n        else:\r\n            args = list(args)\r\n    \r\n        if shell:\r\n            # On Android the default shell is at '/system/bin/sh'.\r\n            unix_shell = ('/system/bin/sh' if\r\n                      hasattr(sys, 'getandroidapilevel') else '/bin/sh')\r\n            args = [unix_shell, \"-c\"] + args\r\n            if executable:\r\n                args[0] = executable\r\n    \r\n        if executable is None:\r\n            executable = args[0]\r\n    \r\n        sys.audit(\"subprocess.Popen\", executable, args, cwd, env)\r\n    \r\n        if (_USE_POSIX_SPAWN\r\n                and os.path.dirname(executable)\r\n                and preexec_fn is None\r\n                and not close_fds\r\n                and not pass_fds\r\n                and cwd is None\r\n                and (p2cread == -1 or p2cread > 2)\r\n                and (c2pwrite == -1 or c2pwrite > 2)\r\n                and (errwrite == -1 or errwrite > 2)\r\n                and not start_new_session\r\n                and gid is None\r\n                and gids is None\r\n                and uid is None\r\n                and umask < 0):\r\n            self._posix_spawn(args, executable, env, restore_signals,\r\n                              p2cread, p2cwrite,\r\n                              c2pread, c2pwrite,\r\n                              errread, errwrite)\r\n            return\r\n    \r\n        orig_executable = executable\r\n    \r\n        # For transferring possible exec failure from child to parent.\r\n        # Data format: \"exception name:hex errno:description\"\r\n        # Pickle is not used; it is complex and involves memory allocation.\r\n        errpipe_read, errpipe_write = os.pipe()\r\n        # errpipe_write must not be in the standard io 0, 1, or 2 fd range.\r\n        low_fds_to_close = []\r\n        while errpipe_write < 3:\r\n            low_fds_to_close.append(errpipe_write)\r\n            errpipe_write = os.dup(errpipe_write)\r\n        for low_fd in low_fds_to_close:\r\n            os.close(low_fd)\r\n        try:\r\n            try:\r\n                # We must avoid complex work that could involve\r\n                # malloc or free in the child process to avoid\r\n                # potential deadlocks, thus we do all this here.\r\n                # and pass it to fork_exec()\r\n    \r\n                if env is not None:\r\n                    env_list = []\r\n                    for k, v in env.items():\r\n                        k = os.fsencode(k)\r\n                        if b'=' in k:\r\n                            raise ValueError(\"illegal environment variable name\")\r\n                        env_list.append(k + b'=' + os.fsencode(v))\r\n                else:\r\n                    env_list = None  # Use execv instead of execve.\r\n                executable = os.fsencode(executable)\r\n                if os.path.dirname(executable):\r\n                    executable_list = (executable,)\r\n                else:\r\n                    # This matches the behavior of os._execvpe().\r\n                    executable_list = tuple(\r\n                        os.path.join(os.fsencode(dir), executable)\r\n                        for dir in os.get_exec_path(env))\r\n                fds_to_keep = set(pass_fds)\r\n                fds_to_keep.add(errpipe_write)\r\n                self.pid = _posixsubprocess.fork_exec(\r\n                        args, executable_list,\r\n                        close_fds, tuple(sorted(map(int, fds_to_keep))),\r\n                        cwd, env_list,\r\n                        p2cread, p2cwrite, c2pread, c2pwrite,\r\n                        errread, errwrite,\r\n                        errpipe_read, errpipe_write,\r\n                        restore_signals, start_new_session,\r\n                        gid, gids, uid, umask,\r\n                        preexec_fn)\r\n                self._child_created = True\r\n            finally:\r\n                # be sure the FD is closed no matter what\r\n                os.close(errpipe_write)\r\n    \r\n            self._close_pipe_fds(p2cread, p2cwrite,\r\n                                 c2pread, c2pwrite,\r\n                                 errread, errwrite)\r\n    \r\n            # Wait for exec to fail or succeed; possibly raising an\r\n            # exception (limited in size)\r\n            errpipe_data = bytearray()\r\n            while True:\r\n                part = os.read(errpipe_read, 50000)\r\n                errpipe_data += part\r\n                if not part or len(errpipe_data) > 50000:\r\n                    break\r\n        finally:\r\n            # be sure the FD is closed no matter what\r\n            os.close(errpipe_read)\r\n    \r\n        if errpipe_data:\r\n            try:\r\n                pid, sts = os.waitpid(self.pid, 0)\r\n                if pid == self.pid:\r\n                    self._handle_exitstatus(sts)\r\n                else:\r\n                    self.returncode = sys.maxsize\r\n            except ChildProcessError:\r\n                pass\r\n    \r\n            try:\r\n                exception_name, hex_errno, err_msg = (\r\n                        errpipe_data.split(b':', 2))\r\n                # The encoding here should match the encoding\r\n                # written in by the subprocess implementations\r\n                # like _posixsubprocess\r\n                err_msg = err_msg.decode()\r\n            except ValueError:\r\n                exception_name = b'SubprocessError'\r\n                hex_errno = b'0'\r\n                err_msg = 'Bad exception data from child: {!r}'.format(\r\n                              bytes(errpipe_data))\r\n            child_exception_type = getattr(\r\n                    builtins, exception_name.decode('ascii'),\r\n                    SubprocessError)\r\n            if issubclass(child_exception_type, OSError) and hex_errno:\r\n                errno_num = int(hex_errno, 16)\r\n                child_exec_never_called = (err_msg == \"noexec\")\r\n                if child_exec_never_called:\r\n                    err_msg = \"\"\r\n                    # The error must be from chdir(cwd).\r\n                    err_filename = cwd\r\n                else:\r\n                    err_filename = orig_executable\r\n                if errno_num != 0:\r\n                    err_msg = os.strerror(errno_num)\r\n>               raise child_exception_type(errno_num, err_msg, err_filename)\r\nE               FileNotFoundError: [Errno 2] No such file or directory: 'python3'\r\n\r\n/usr/local/lib/python3.9/subprocess.py:1821: FileNotFoundError\r\n___________________________________________________________________________________ test_env_no_pip[flags1-packages1] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags1_package0'), poetry = <poetry.poetry.Poetry object at 0x9676976a0>\r\nflags = {'no-pip': False, 'no-setuptools': True, 'no-wheel': True}, packages = {'pip'}\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'pip', 'tkinter'} == {'pip'}\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - {'pip'}\r\nE         + {'tkinter', 'pip'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n___________________________________________________________________________________ test_env_no_pip[flags3-packages3] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags3_package0'), poetry = <poetry.poetry.Poetry object at 0x96735d400>\r\nflags = {'no-pip': True, 'no-setuptools': False, 'no-wheel': True}, packages = {'setuptools'}\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'setuptools', 'tkinter'} == {'setuptools'}\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - {'setuptools'}\r\nE         + {'setuptools', 'tkinter'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n___________________________________________________________________________________ test_env_no_pip[flags2-packages2] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags2_package0'), poetry = <poetry.poetry.Poetry object at 0x972c8d310>\r\nflags = {'no-pip': True, 'no-setuptools': True, 'no-wheel': True}, packages = set()\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'tkinter'} == set()\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - set()\r\nE         + {'tkinter'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n___________________________________________________________________________________ test_env_no_pip[flags4-packages4] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags4_package0'), poetry = <poetry.poetry.Poetry object at 0x967687b80>\r\nflags = {'no-pip': True, 'no-setuptools': True, 'no-wheel': True}, packages = set()\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'tkinter'} == set()\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - set()\r\nE         + {'tkinter'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n___________________________________________________________________________________ test_env_no_pip[flags7-packages7] ___________________________________________________________________________________\r\n\r\ntmp_path = PosixPath('/tmp/pytest-of-yuri/pytest-60/test_env_no_pip_flags7_package0'), poetry = <poetry.poetry.Poetry object at 0x96769d550>, flags = {}, packages = set()\r\n\r\n    @pytest.mark.parametrize(\r\n        (\"flags\", \"packages\"),\r\n        [\r\n            ({\"no-pip\": False}, {\"pip\", \"wheel\"}),\r\n            ({\"no-pip\": False, \"no-wheel\": True}, {\"pip\"}),\r\n            ({\"no-pip\": True}, set()),\r\n            ({\"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-setuptools\": True}, set()),\r\n            ({\"no-pip\": True, \"no-setuptools\": False}, {\"setuptools\"}),\r\n            ({\"no-wheel\": False}, {\"wheel\"}),\r\n            ({}, set()),\r\n        ],\r\n    )\r\n    def test_env_no_pip(\r\n        tmp_path: Path, poetry: Poetry, flags: dict[str, bool], packages: set[str]\r\n    ):\r\n        venv_path = tmp_path / \"venv\"\r\n        EnvManager(poetry).build_venv(path=venv_path, flags=flags)\r\n        env = VirtualEnv(venv_path)\r\n        installed_repository = InstalledRepository.load(env=env, with_dependencies=True)\r\n        installed_packages = {\r\n            package.name\r\n            for package in installed_repository.packages\r\n            # workaround for BSD test environments\r\n            if package.name != \"sqlite3\"\r\n        }\r\n    \r\n>       assert installed_packages == packages\r\nE       AssertionError: assert {'tkinter'} == set()\r\nE         Extra items in the left set:\r\nE         'tkinter'\r\nE         Full diff:\r\nE         - set()\r\nE         + {'tkinter'}\r\n\r\ntests/utils/test_env.py:1325: AssertionError\r\n=========================================================================================== warnings summary ============================================================================================\r\n../../../../../local/lib/python3.9/site-packages/httpretty/core.py:176\r\n  /usr/local/lib/python3.9/site-packages/httpretty/core.py:176: DeprecationWarning: 'urllib3.contrib.pyopenssl' module is deprecated and will be removed in a future release of urllib3 2.x. Read more in this issue: https://github.com/urllib3/urllib3/issues/2680\r\n    from requests.packages.urllib3.contrib.pyopenssl import inject_into_urllib3, extract_from_urllib3\r\n\r\n../../../../../local/lib/python3.9/site-packages/httpretty/core.py:185\r\n  /usr/local/lib/python3.9/site-packages/httpretty/core.py:185: DeprecationWarning: 'urllib3.contrib.pyopenssl' module is deprecated and will be removed in a future release of urllib3 2.x. Read more in this issue: https://github.com/urllib3/urllib3/issues/2680\r\n    from urllib3.contrib.pyopenssl import extract_from_urllib3, inject_into_urllib3\r\n\r\n../../../../../local/lib/python3.9/site-packages/pytest_freezegun.py:17: 2506 warnings\r\n  /usr/local/lib/python3.9/site-packages/pytest_freezegun.py:17: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\r\n    if LooseVersion(pytest.__version__) < LooseVersion('3.6.0'):\r\n\r\ntests/console/commands/env/test_use.py::test_get_prefers_explicitly_activated_virtualenvs_over_env_var\r\n  /usr/local/lib/python3.9/site-packages/poetry_dynamic_versioning/plugin.py:15: DeprecationWarning: poetry.core.semver is deprecated. Use poetry.core.constraints.version instead.\r\n    from poetry.core.semver.version import Version as PoetryCoreVersion\r\n\r\ntests/installation/test_pip_installer.py::test_requirement_git_subdirectory\r\n  /usr/local/lib/python3.9/site-packages/_distutils_hack/__init__.py:33: UserWarning: Setuptools is replacing distutils.\r\n    warnings.warn(\"Setuptools is replacing distutils.\")\r\n\r\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\r\n======================================================================================== short test summary info ========================================================================================\r\nSKIPPED [1] tests/utils/test_env.py:99: requires darwin\r\nSKIPPED [1] tests/installation/test_installer.py:1877: This is not working at the moment due to limitations in the resolver\r\nSKIPPED [1] tests/installation/test_installer_old.py:1531: This is not working at the moment due to limitations in the resolver\r\nSKIPPED [1] tests/console/commands/test_run.py:90: Poetry only installs CMD script files for console scripts of editable dependencies on Windows\r\nSKIPPED [1] tests/puzzle/test_solver.py:3172: Poetry no longer has critical package requirements\r\n========================================================== 9 failed, 1217 passed, 5 skipped, 22 deselected, 2510 warnings in 313.10s (0:05:13) ==========================================================\r\n*** Error code 1\r\n```\r\n\r\nVersion: 1.3.2\r\nPython: 3.9\r\nFreeBSD 13.1\r\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "poetry-9961",
@@ -1138,7 +1391,44 @@
         "evidence": "`pyproject.toml` is not a supported language for static symbol checks.",
         "quote": "sometool = \"somepackage:main\""
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 28.57,
+      "dropped_claims": [
+        {
+          "type": "bug_behavior",
+          "quote": "poetry run fails with a keyerror for poetry 2.0.0",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "KeyError: 'format'",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_fixes_issue",
+          "quote": "Fixes #120",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "pr_adds_tests",
+          "quote": "Adds tests for poetry run command",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "security_vuln",
+          "quote": "KeyError: 'format' may indicate a missing configuration parameter",
+          "reason": "quote_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "`poetry run` fails with a keyerror for poetry 2.0.0\n\n### Description\n\nWith the latest poetry release 2.0.0 calling a script via `poetry run` always fails with a KeyError.\r\n\r\n```\r\n  KeyError\r\n\r\n  'format'\r\n\r\n  at ~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py:79 in __init__\r\n       75│             self._package_includes.append(\r\n       76│                 PackageInclude(\r\n       77│                     self._path,\r\n       78│                     package[\"include\"],\r\n    →  79│                     formats=package[\"format\"],\r\n       80│                     source=package.get(\"from\"),\r\n       81│                     target=package.get(\"to\"),\r\n       82│                 )\r\n       83│             )\r\n```\r\n\r\nSteps to reproduce.\r\n* Install poetry via pipx\r\n* Create a temporary directory\r\n* Change into the temporary directory\r\n* Copy the following `pyproject.toml` into that new directory \r\n\r\n```toml\r\n[build-system]\r\nrequires = [\"poetry-core>=1.0.0\"]\r\nbuild-backend = \"poetry.core.masonry.api\"\r\n\r\n[tool.poetry]\r\nname = \"tmp\"\r\nversion = \"0.1.0\"\r\ndescription = \"\"\r\nauthors = [\"Foo Bar <foo@bar.com>\"]\r\nreadme = \"README.md\"\r\n\r\npackages = [{ include = \"somepackage\" }]\r\n\r\n[tool.poetry.scripts]\r\nsometool = \"somepackage:main\"\r\n```\r\n* Create a `someproject/__init__.py` file in that temporary directory with the following content\r\n```python\r\ndef main():\r\n    print(\"Hello from somepackage\")\r\n```\r\n* Call `poetry run sometool`\n\n### Workarounds\n\nNone\n\n### Poetry Installation Method\n\npipx\n\n### Operating System\n\nUbuntu 24.04\n\n### Poetry Version\n\nPoetry (version 2.0.0)\n\n### Poetry Configuration\n\n```bash session\ncache-dir = \"/home/bricks/.cache/pypoetry\"\r\ninstaller.max-workers = null\r\ninstaller.no-binary = null\r\ninstaller.only-binary = null\r\ninstaller.parallel = true\r\ninstaller.re-resolve = true\r\nkeyring.enabled = true\r\nrequests.max-retries = 0\r\nsolver.lazy-wheel = true\r\nsystem-git-client = false\r\nvirtualenvs.create = true\r\nvirtualenvs.in-project = true\r\nvirtualenvs.options.always-copy = false\r\nvirtualenvs.options.no-pip = false\r\nvirtualenvs.options.system-site-packages = false\r\nvirtualenvs.path = \"{cache-dir}/virtualenvs\"  # /home/bricks/.cache/pypoetry/virtualenvs\r\nvirtualenvs.prompt = \"{project_name}-py{python_version}\"\r\nvirtualenvs.use-poetry-python = false\r\n```\n```\n\n\n### Python Sysconfig\n\n_No response_\n\n### Example pyproject.toml\n\n```TOML\n[build-system]\r\nrequires = [\"poetry-core>=1.0.0\"]\r\nbuild-backend = \"poetry.core.masonry.api\"\r\n\r\n[tool.poetry]\r\nname = \"tmp\"\r\nversion = \"0.1.0\"\r\ndescription = \"\"\r\nauthors = [\"Foo Bar <foo@bar.com>\"]\r\nreadme = \"README.md\"\r\n\r\npackages = [{ include = \"somepackage\" }]\r\n\r\n[tool.poetry.scripts]\r\nsometool = \"somepackage:main\"\n```\n\n\n### Poetry Runtime Logs\n\n```bash session\npoetry run -vvv sometool\r\n\r\n  KeyError\r\n\r\n  'format'\r\n\r\n  at ~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py:79 in __init__\r\n       75│             self._package_includes.append(\r\n       76│                 PackageInclude(\r\n       77│                     self._path,\r\n       78│                     package[\"include\"],\r\n    →  79│                     formats=package[\"format\"],\r\n       80│                     source=package.get(\"from\"),\r\n       81│                     target=package.get(\"to\"),\r\n       82│                 )\n```\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "rich-1630",
@@ -1208,7 +1498,18 @@
         "evidence": "`Console` is defined in `rich/console.py` at line 572 (class). `Console` was not found.",
         "quote": "you can't create an instance of Console that explicitly doesn't use link escape codes"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 6.72,
+      "dropped_claims": [],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "Escape codes for links aren't always suppressed when not supported\n\n### Discussed in https://github.com/willmcgugan/rich/discussions/1625\r\n\r\n<div type='discussions-op-text'>\r\n\r\n<sup>Originally posted by **emojjon** October 28, 2021</sup>\r\nAs I understand it, you can't create an instance of Console that explicitly doesn't use link escape codes. Apparently these codes should be ignored by terminals that don't support them. Sometimes it would be good though, because the codes actually mangles the output in some circumstances.\r\n\r\nI hesitate to say exactly how to reproduce this since in my case it involved several ssh logins and strangeness with shell rc-files and what not. Suffice to say it would be nice to be able to turn it off in some circumstances, perhaps even from outside the python code (environment variable?).\r\n\r\nGreat project by the way. I discovered it yesterday, and I'm looking forward to try and use it myself.</div>",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "rich-2988",
@@ -1273,7 +1574,34 @@
         "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "ref: https://github.com/ZhiyuanChen/CHANfiG/issues/6"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 20.92,
+      "dropped_claims": [
+        {
+          "type": "bug_behavior",
+          "quote": "rich.print inspects __rich__ and aihwerij235234ljsdnp34ksodfipwoe234234jlskjdf of object during printing",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "However, it does not inspect if the __getattr__ of object will always returns something",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "bug_behavior",
+          "quote": "ipython avoids this behaviour by checking _ipython_canary_method_should_not_exist_ before inspecting the object",
+          "reason": "quote_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "[BUG] print does not work well with DefaultDict\n\n- [x] I've checked [docs](https://rich.readthedocs.io/en/latest/introduction.html) and [closed issues](https://github.com/Textualize/rich/issues?q=is%3Aissue+is%3Aclosed) for possible solutions.\r\n- [x] I can't find my issue in the [FAQ](https://github.com/Textualize/rich/blob/master/FAQ.md).\r\n\r\n**Describe the bug**\r\n\r\n`rich.print` inspects `__rich__` and `aihwerij235234ljsdnp34ksodfipwoe234234jlskjdf` of object during printing. \r\n\r\nHowever, it does not inspect if the `__getattr__` of object will always returns something. \r\n\r\n`ipython` avoids this behaviour by checking `_ipython_canary_method_should_not_exist_` before inspecting the object. \r\n\r\n```python\r\nfrom chanfig import Config\r\nfrom rich import print as pprint\r\n\r\n\r\nif __name__ == '__main__':\r\n    config = Config(**{'hello': 'world'})\r\n    print('print', config)\r\n    pprint('rich.print', config)\r\n    print(config.__rich__)\r\n    print(config.keys())\r\n```\r\n\r\n```bash\r\nrint Config(<class 'chanfig.config.Config'>,\r\n  ('hello'): 'world'\r\n)\r\nrich.print Config(<class 'chanfig.config.Config'>,\r\n  ('hello'): 'world'\r\n  ('__rich__'): Config(<class 'chanfig.config.Config'>, )\r\n  ('aihwerij235234ljsdnp34ksodfipwoe234234jlskjdf'): Config(<class 'chanfig.config.Config'>, )\r\n)\r\nConfig(<class 'chanfig.config.Config'>, )\r\ndict_keys(['hello', '__rich__', 'aihwerij235234ljsdnp34ksodfipwoe234234jlskjdf'])\r\n```\r\n\r\nref: https://github.com/ZhiyuanChen/CHANfiG/issues/6\r\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "textual-2178",
@@ -1441,7 +1769,29 @@
         "evidence": "Insufficient evidence to confirm or invalidate claim",
         "quote": "(I use the new Windows Terminal with WSL, the same happens in PowerShell)"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 18.22,
+      "dropped_claims": [
+        {
+          "type": "symbol_exists",
+          "quote": "with Grid(id=\"main\"): yield Label(...)",
+          "reason": "quote_not_in_text"
+        },
+        {
+          "type": "version_affected",
+          "quote": "Using Rich to print markup text",
+          "reason": "version_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "Text cannot be bold via markup or CSS\n\nThe ability to **bold** text seems to be broken.\r\n\r\n```python\r\nwith Grid(id=\"main\"):\r\n  yield Label(Text.from_markup(\"[bold]Name:[/]\"), classes=\"label\")\r\n  yield Label(\"John McExample\", classes=\"data-fw\")\r\n```\r\n\r\n```css\r\n#main .label {\r\n    width: 100%;\r\n    column-span: 1;\r\n    text-style: bold;\r\n    text-align: right;\r\n}\r\n```\r\n\r\nResult inside of Textual\r\n![image](https://user-images.githubusercontent.com/771888/228837193-b4933f6b-0642-4ff3-a7fd-3ae3701825c2.png)\r\n\r\nUsing Rich to print markup text\r\n![image](https://user-images.githubusercontent.com/771888/228839119-a8c0fe24-27b1-4f66-8290-0204fcbaf12f.png)\r\n\r\n(I use the new Windows Terminal with WSL, the same happens in PowerShell)\r\n\r\n\r\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   },
   {
     "id": "textual-2863",
@@ -1529,6 +1879,28 @@
         "evidence": "`screen` is defined in `src/textual/dom.py` at line 460 (method).",
         "quote": "Making a change akin to this:"
       }
-    ]
+    ],
+    "extraction": {
+      "method": "llm",
+      "model": "qwen3:8b",
+      "seconds": 36.35,
+      "dropped_claims": [
+        {
+          "type": "pr_fixes_issue",
+          "quote": "seems to address the issue",
+          "reason": "pr_claim_in_issue"
+        },
+        {
+          "type": "version_affected",
+          "quote": "If I can work out an isolated reproduction of this I'll add it here",
+          "reason": "version_not_in_text"
+        }
+      ],
+      "is_pull_request": false,
+      "text_source": "github_issue",
+      "text": "Mounting duplicate widget IDs can result in a `NoScreen` error\n\nI'm writing this one up near the end of the day, at the start of a holiday, just so it's written down and I/we don't forget. Annoyingly I *can't* recreate the problem in isolation, only in the code I'm working on at the moment.\r\n\r\nIt is possible to get into a situation where an attempt to `mount` a widget with an ID that already exists amongst its would-be siblings results in a `NoScreen` error being thrown from somewhere deep in the compositor code rather than the `DuplicateIds`, which is what you'd expect.\r\n\r\nThe error I was seeing is follows at the end of here.\r\n\r\nQuick testing suggests that `NodeList._append` and `NodeList._insert` are the issue here. Making a change akin to this:\r\n\r\n```diff\r\n@@ -74,12 +74,12 @@ class NodeList(Sequence[\"Widget\"]):\r\n             widget: A widget.\r\n         \"\"\"\r\n         if widget not in self._nodes_set:\r\n-            self._nodes.append(widget)\r\n-            self._nodes_set.add(widget)\r\n             widget_id = widget.id\r\n             if widget_id is not None:\r\n                 self._ensure_unique_id(widget_id)\r\n                 self._nodes_by_id[widget_id] = widget\r\n+            self._nodes.append(widget)\r\n+            self._nodes_set.add(widget)\r\n             self._updates += 1\r\n \r\n     def _insert(self, index: int, widget: Widget) -> None:\r\n```\r\n\r\nseems to address the issue.\r\n\r\nIf I can work out an isolated reproduction of this I'll add it here, but the above change does seem to make some sense I think.\r\n\r\n```\r\n...\r\n│                                                                                                                                                                       │\r\n│ /Users/davep/develop/python/textual/src/textual/dom.py:477 in screen                                                                                                  │\r\n│                                                                                                                                                                       │\r\n│    474 │   │   while node is not None and not isinstance(node, Screen):                                                                                               │\r\n│    475 │   │   │   node = node._parent                                                                                                                                │\r\n│    476 │   │   if not isinstance(node, Screen):                                                                                                                       │\r\n│ ❱  477 │   │   │   raise NoScreen(\"node has no screen\")                                                                                                               │\r\n│    478 │   │   return node                                                                                                                                            │\r\n│    479 │                                                                                                                                                              │\r\n│    480 │   @property                                                                                                                                                  │\r\n│                                                                                                                                                                       │\r\n│ ╭───────────────────────────────────── locals ──────────────────────────────────────╮                                                                                 │\r\n│ │   node = None                                                                     │                                                                                 │\r\n│ │ Screen = <class 'textual.screen.Screen'>                                          │                                                                                 │\r\n│ │   self = RightAlignToast(id='textual-toast-91b49506-d61a-4698-ac8b-5bc491fdd5c9') │                                                                                 │\r\n│ ╰───────────────────────────────────────────────────────────────────────────────────╯                                                                                 │\r\n╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\r\nNoScreen: node has no screen\r\n```\r\n",
+      "model_digest": "500a1f067a9f",
+      "temperature": 0
+    }
   }
 ]
