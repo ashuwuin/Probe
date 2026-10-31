@@ -537,3 +537,41 @@ def test_unmappable_installed_paths_stay_external(src_layout_repo, path):
     result = check_static_symbol(src_layout_repo, claim("calculate_tax", path))
     assert result.outcome == "inconclusive"
     assert result.details["reason"] == "external_file"
+
+
+# ---------------------------------------------------------------- absence that agrees with the report
+
+@pytest.mark.parametrize(
+    ("symbol", "quote", "actual"),
+    [
+        ("session_id_version", "Login fails", "AttributeError: 'HikAx' object has no attribute 'session_id_version'"),
+        ("save_json", "ImportError: cannot import name 'save_json' from 'swemail.util'", None),
+        ("helper_fn", "NameError: name 'helper_fn' is not defined", None),
+        ("search_keys", "Search functionality: `search_keys` doesn't exist.", None),
+        ("listen", "AttributeError: 'CloudEvents' object has no attribute \"listen\"", None),
+    ],
+)
+def test_absence_matching_the_reported_error_is_inconclusive(repo, symbol, quote, actual):
+    c = Claim(id="c1", type="bug_behavior", symbol=symbol, quote=quote, actual=actual)
+    result = check_static_symbol(repo, c)
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "reported_missing"
+
+
+@pytest.mark.parametrize("symbol", ["replace", "append", "items", "startswith", "len", "isinstance"])
+def test_builtin_attribute_names_are_inconclusive(repo, symbol):
+    result = check_static_symbol(repo, claim(symbol))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "builtin_attribute"
+
+
+def test_report_that_merely_mentions_a_name_still_contradicts(repo):
+    c = Claim(id="c1", type="bug_behavior", symbol="refund_everything",
+              quote="refund_everything() crashes with a ValueError on negative amounts")
+    assert check_static_symbol(repo, c).outcome == "contradicts"
+
+
+def test_reported_missing_only_applies_to_the_same_name(repo):
+    c = Claim(id="c1", type="bug_behavior", symbol="refund_everything",
+              quote="AttributeError: 'Invoice' object has no attribute 'refund'")
+    assert check_static_symbol(repo, c).outcome == "contradicts"
