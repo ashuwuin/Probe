@@ -3,13 +3,13 @@
   "title": "apply_discount returns the wrong price",
   "source": "`examples/repos/shop` (demo repo)",
   "provenance": "synthetic issue against the demo repo examples/repos/shop (the bug is real: apply_discount(100, 10) returns 0.0)",
-  "verdict_source": "baseline rules (probe.verdict not available yet)",
-  "overall": "uncertain",
+  "verdict_source": "probe.verdict.evaluate_claim_verdict",
+  "overall": "confirmed",
   "expected_overall": "confirmed",
   "expected_claim_verdicts": {
     "c1": "confirmed"
   },
-  "status": "pending sandbox",
+  "status": "matches expected",
   "claims": [
     {
       "id": "c1",
@@ -40,15 +40,29 @@
           "confidence": "high",
           "matches": 1
         }
+      },
+      {
+        "claim_id": "c1",
+        "checker": "sandbox",
+        "outcome": "supports",
+        "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0",
+        "line_number": null,
+        "details": {
+          "reason": "reproduced",
+          "exit_code": 1,
+          "exception": "AssertionError",
+          "stdout": "",
+          "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0"
+        }
       }
     ]
   },
   "verdicts": [
     {
       "claim_id": "c1",
-      "status": "uncertain",
-      "confidence": "low",
-      "evidence": "Not enough evidence to decide. `apply_discount` is defined in `shop/billing.py` at line 6 (function).",
+      "status": "confirmed",
+      "confidence": "high",
+      "evidence": "Reproduced failure (AssertionError): Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: 0.0",
       "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0."
     }
   ]

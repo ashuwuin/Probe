@@ -141,7 +141,7 @@ def evaluate_claim_verdict(
         )
 
     # Rule 7: Sandbox unavailable
-    if sandbox_res and sandbox_res.details.get("reason") == "sandbox_unavailable":
+    if sandbox_res and sandbox_res.details.get("reason") in ("sandbox_unavailable", "image_unavailable"):
         return VerdictResult(
             claim_id=claim.id,
             status="uncertain",

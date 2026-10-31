@@ -94,7 +94,9 @@ def render(result: dict) -> str:
         if not results:
             lines.append(f"- `{cid}`: no deterministic check applies")
         for r in results:
-            lines.append(f"- `{cid}` · `{r['checker']}` → **{r['outcome']}** ({r['details'].get('reason')}): {_cell(r['evidence'])}")
+            reason = r["details"].get("reason")
+            reason_str = f" ({reason})" if reason else ""
+            lines.append(f"- `{cid}` · `{r['checker']}` → **{r['outcome']}**{reason_str}: {_cell(r['evidence'])}")
     lines += [
         "",
         "</details>",
