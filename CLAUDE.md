@@ -10,7 +10,6 @@ Team Zig1: Ashwin Anand (@ashuwuin, repo owner), Kaashvi Saini (@Kaashviw3spaces
   "All unit tests pass" only after pytest actually ran in this session.
 - **Ask the user before** pushing a branch, opening a PR or merging. Never post comments or reviews on GitHub.
 - **Never** write internal machine or task-split labels in PRs, commits or code; name modules or people instead.
-  Name modules or people instead.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **Allowed models:** open-weight only (Qwen, Llama, Gemma, Mistral, DeepSeek, Phi). Never call closed/cloud AI APIs.
 - **Never** run repository or reporter code on the host; only `probe.verify.sandbox` (Docker) may execute it.
