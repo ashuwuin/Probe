@@ -44,13 +44,19 @@ def clean_env(monkeypatch):
     monkeypatch.delenv("MODEL_BASE_URL", raising=False)
 
 
-def ollama_reply(claims: list[dict] | None = None, *, content: str | None = None, status=200):
+def ollama_reply(
+    claims: list[dict] | None = None, *, content: str | None = None, status=200, done_reason="stop"
+):
     """A fake Ollama /api/chat response whose message content holds `claims` as JSON."""
     if content is None:
         content = json.dumps({"claims": claims or []})
     return httpx.Response(
         status,
-        json={"model": DEFAULT_MODEL, "message": {"role": "assistant", "content": content}},
+        json={
+            "model": DEFAULT_MODEL,
+            "message": {"role": "assistant", "content": content},
+            "done_reason": done_reason,
+        },
         request=httpx.Request("POST", OLLAMA_URL),
     )
 
@@ -441,6 +447,177 @@ def test_unknown_kind_keeps_pull_request_claims():
     assert [c.type for c in result.claims] == ["pr_fixes_issue", "pr_adds_tests"]
 
 
+# --------------------------------------------------------------------------- review fixes
+
+
+LONG_SCRIPT = "\n".join(
+    ["from billing import calculate_tax", ""]
+    + [f"step_{i} = {i}" for i in range(2, 30)]
+    + ["calculate_tax(-5)  # line 30: this is the call that crashes"]
+    + [f"after_{i} = {i}" for i in range(31, 41)]
+)
+LONG_SCRIPT_ISSUE = f"It crashes when I run this script:\n```python\n{LONG_SCRIPT}\n```"
+
+
+def test_partial_repro_script_is_rejected():
+    """A cut-off script would run cleanly in the sandbox and give a false cannot-reproduce."""
+    first_25_lines = "\n".join(LONG_SCRIPT.split("\n")[:25])
+    reply = ollama_reply(
+        [{"type": "bug_behavior", "quote": "It crashes when I run this script:", "repro": first_25_lines}]
+    )
+    with mock_post(reply):
+        claim = extract_claims(LONG_SCRIPT_ISSUE).claims[0]
+    assert claim.repro is None
+
+
+def test_whole_repro_script_is_kept():
+    reply = ollama_reply(
+        [{"type": "bug_behavior", "quote": "It crashes when I run this script:", "repro": LONG_SCRIPT}]
+    )
+    with mock_post(reply):
+        claim = extract_claims(LONG_SCRIPT_ISSUE).claims[0]
+    assert claim.repro == LONG_SCRIPT
+
+
+def test_whole_inline_code_is_a_valid_repro_but_part_of_it_is_not():
+    text = "Calling `calculate_tax(-5, region='EU')` crashes."
+    claims = [
+        {"type": "bug_behavior", "quote": text, "repro": "calculate_tax(-5, region='EU')"},
+        {"type": "symbol_exists", "quote": text, "repro": "calculate_tax(-5"},
+    ]
+    with mock_post(ollama_reply(claims)):
+        result = extract_claims(text)
+    assert [c.repro for c in result.claims] == ["calculate_tax(-5, region='EU')", None]
+
+
+def test_python_code_blocks_are_never_shortened_before_sending():
+    with mock_post(ollama_reply([])) as post:
+        extract_claims(LONG_SCRIPT_ISSUE)
+    sent = sent_text(post)
+    assert "calculate_tax(-5)  # line 30" in sent
+    assert "lines omitted" not in sent
+
+
+def test_cut_off_answer_is_not_retried():
+    """Temperature 0: retrying an answer that hit the token cap gives the same cut-off JSON."""
+    cut_off = ollama_reply(content='{"claims": [{"type": "bug_behavior", "quote": "x", "repro": "imp',
+                           done_reason="length")
+    with mock_post(cut_off, cut_off) as post:
+        result = extract_claims(BILLING_ISSUE)
+    assert post.call_count == 1
+    assert result.method == "regex_fallback"
+
+
+def test_answer_at_the_token_cap_is_used_if_it_still_parses():
+    reply = ollama_reply([{"type": "bug_behavior", "quote": BILLING_ISSUE}], done_reason="length")
+    with mock_post(reply):
+        assert extract_claims(BILLING_ISSUE).method == "llm"
+
+
+def test_output_cap_leaves_room_for_repro_scripts():
+    assert MAX_OUTPUT_TOKENS >= 2048
+
+
+@pytest.mark.parametrize(
+    "field, value, text",
+    [
+        ("symbol", "calc", "`calculate_tax()` crashes on negative numbers."),
+        ("file", "billing.py", "`old_billing.py` crashes on negative numbers."),
+        ("file", "billing.py", "`billing.pyc` crashes on negative numbers."),
+    ],
+)
+def test_partial_word_matches_are_cleared(field, value, text):
+    reply = ollama_reply([{"type": "bug_behavior", "quote": text, field: value}])
+    with mock_post(reply):
+        claim = extract_claims(text).claims[0]
+    assert getattr(claim, field) is None
+
+
+@pytest.mark.parametrize(
+    "field, value, text",
+    [
+        ("symbol", "calculate_tax", "`calculate_tax()` crashes."),
+        ("symbol", "urlsplit", "`urllib.parse.urlsplit()` crashes."),
+        ("file", "billing.py", "`src/billing.py` crashes."),
+        ("version", "1.2.0", "It crashes on v1.2.0."),
+        ("version", "v1.2.0", "It crashes on 1.2.0."),
+    ],
+)
+def test_whole_token_matches_are_kept(field, value, text):
+    reply = ollama_reply([{"type": "bug_behavior", "quote": text, field: value}])
+    with mock_post(reply):
+        assert getattr(extract_claims(text).claims[0], field) == value
+
+
+def test_partial_version_match_drops_the_version_claim():
+    text = "It crashes on 1.23."
+    reply = ollama_reply([{"type": "version_affected", "quote": text, "version": "1.2"}])
+    with mock_post(reply):
+        result = extract_claims(text)
+    assert result.claims == []
+    assert result.dropped_claims[0]["reason"] == "version_not_in_text"
+
+
+LIBRARY_TRACEBACK = (
+    "Loading the config crashes:\n```\n"
+    "Traceback (most recent call last):\n"
+    '  File "/home/me/proj/app/config.py", line 12, in load_config\n'
+    "    return json.loads(raw)\n"
+    '  File "/usr/lib/python3.11/json/__init__.py", line 346, in loads\n'
+    "    return _default_decoder.decode(s)\n"
+    '  File "/usr/lib/python3.11/json/decoder.py", line 355, in raw_decode\n'
+    '    raise JSONDecodeError("Expecting value", s, err.value) from None\n'
+    "json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)\n```"
+)
+
+
+def test_model_cannot_point_at_python_library_code():
+    reply = ollama_reply(
+        [
+            {
+                "type": "bug_behavior",
+                "quote": "Loading the config crashes:",
+                "file": "/usr/lib/python3.11/json/decoder.py",
+                "symbol": "raw_decode",
+            },
+            {
+                "type": "bug_behavior",
+                "quote": "Loading the config crashes:",
+                "file": "/home/me/proj/app/config.py",
+                "symbol": "load_config",
+            },
+        ]
+    )
+    with mock_post(reply):
+        claims = extract_claims(LIBRARY_TRACEBACK).claims
+    # duplicates (same type + quote) are merged, so only the first survives: it must be cleared
+    assert (claims[0].file, claims[0].symbol) == (None, None)
+
+
+def test_model_can_point_at_the_projects_own_frame():
+    reply = ollama_reply(
+        [
+            {
+                "type": "bug_behavior",
+                "quote": "Loading the config crashes:",
+                "file": "/home/me/proj/app/config.py",
+                "symbol": "load_config",
+            }
+        ]
+    )
+    with mock_post(reply):
+        claim = extract_claims(LIBRARY_TRACEBACK).claims[0]
+    assert (claim.file, claim.symbol) == ("/home/me/proj/app/config.py", "load_config")
+
+
+@pytest.mark.parametrize("field, value", [("symbol", "macOS"), ("symbol", "iOS"), ("file", "Node.js")])
+def test_model_cannot_name_a_platform_as_code(field, value):
+    text = "It crashes on macOS(Sonoma) and iOS(17) with Node.js 18."
+    reply = ollama_reply([{"type": "bug_behavior", "quote": text, field: value}])
+    with mock_post(reply):
+        assert getattr(extract_claims(text).claims[0], field) is None
+
+
 # --------------------------------------------------------------------------- failures
 
 
@@ -705,6 +882,37 @@ def test_regex_quotes_are_always_exact_substrings(text):
     assert claims
     assert all(c.quote in text for c in claims)
     assert [c.id for c in claims] == [f"c{i}" for i in range(1, len(claims) + 1)]
+
+
+def test_regex_traceback_uses_the_projects_frame_not_the_library():
+    """Regression: the innermost frame was json/decoder.py, which isn't in the repository,
+    so a real crash report came out `invalid`."""
+    crash = regex_extract(LIBRARY_TRACEBACK)[0]
+    assert (crash.file, crash.symbol) == ("/home/me/proj/app/config.py", "load_config")
+    assert crash.actual.startswith("json.decoder.JSONDecodeError: Expecting value")
+    assert "/usr/lib/python3.11/json/decoder.py:355" in crash.actual  # evidence is kept
+
+
+def test_regex_traceback_entirely_in_library_code_names_no_file():
+    text = (
+        "```\nTraceback (most recent call last):\n"
+        '  File "/usr/lib/python3.11/site-packages/requests/api.py", line 73, in get\n'
+        "requests.exceptions.ConnectionError: refused\n```"
+    )
+    crash = regex_extract(text)[0]
+    assert (crash.type, crash.file, crash.symbol) == ("bug_behavior", None, None)
+    assert "in library code" in crash.actual
+
+
+def test_regex_platform_names_are_not_code():
+    """Regression: macOS(Sonoma), iOS(17) and Node.js were read as functions/files."""
+    claims = regex_extract("It crashes on macOS(Sonoma) and iOS(17) with Node.js 18.")
+    assert all(c.symbol is None and c.file is None for c in claims)
+
+
+def test_regex_platform_names_do_not_hide_real_code():
+    claims = regex_extract("On macOS(Sonoma), calling parse_url(x) in urls/parser.py crashes.")
+    assert {(c.file, c.symbol) for c in claims} == {("urls/parser.py", "parse_url")}
 
 
 # --------------------------------------------------------------------------- live (optional)

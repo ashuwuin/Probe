@@ -38,8 +38,10 @@ MAX_INPUT_CHARS = 6_000  # characters of (condensed) issue text sent to the mode
 MAX_FALLBACK_CHARS = 50_000  # the regex fallback is fast, so it reads much more
 MAX_CLAIMS = 20  # hard cap after the guardrails
 PROMPT_MAX_CLAIMS = 8  # what the model is asked for; fewer claims = shorter, faster answers
-MAX_OUTPUT_TOKENS = 1024  # Ollama `num_predict`: stops runaway generation
-CONTEXT_TOKENS = 6144  # system prompt + ~6k chars of input + output, with headroom
+# Ollama `num_predict`. Repro code is copied word for word, so 2-3 claims with scripts need
+# room; 1024 cut such answers off mid-JSON.
+MAX_OUTPUT_TOKENS = 2048
+CONTEXT_TOKENS = 8192  # system prompt + ~6k chars of input + a full-length answer
 KEEP_ALIVE = "30m"  # keep the model loaded between issues instead of reloading it
 REQUEST_TIMEOUT_SECONDS = 120.0
 CODE_BLOCK_HEAD_LINES = 25  # long code blocks/logs keep their first lines...
@@ -129,8 +131,83 @@ def _clean_symbol(symbol: str | None) -> str | None:
     return symbol or None
 
 
+def _token_pattern(value: str, kind: str) -> re.Pattern:
+    """Match `value` as a whole token, so `calc` doesn't match inside `calculate_tax`
+    and version `1.2` doesn't match inside `1.23`."""
+    if kind == "version":
+        core = re.escape(value[1:] if value[:1] in "vV" and value[1:2].isdigit() else value)
+        return re.compile(rf"(?<![\w.])[vV]?{core}(?!\w|\.\d)")
+    escaped = re.escape(value)
+    if kind == "file":  # `billing.py` still matches `src/billing.py`
+        return re.compile(rf"(?<![\w.-]){escaped}(?![\w-])")
+    return re.compile(rf"(?<!\w){escaped}(?!\w)")  # symbol: `func` matches `module.func()`
+
+
+def _keep_if_token(value: str | None, text_normalized: str, kind: str) -> str | None:
+    value = _normalize(value or "")
+    if not value or not _token_pattern(value, kind).search(text_normalized):
+        return None
+    return value
+
+
 def _keep_if_present(value: str | None, text_normalized: str) -> str | None:
     return value if _appears_in(value, text_normalized) else None
+
+
+# Python's own library and installed packages: a traceback frame here is not the project's
+# code, so its file/function must never be checked against the repository (it would be
+# "not found" and turn a real crash into `invalid`).
+_LIBRARY_PATH_RE = re.compile(
+    r"site-packages|dist-packages|[\\/]lib[\\/]python\d|[A-Za-z]:\\Python\d+\\Lib\\|"
+    r"[\\/]\.pyenv[\\/]|[\\/]Python\.framework[\\/]|^<frozen |^<string>$|^<stdin>$|python\d+\.zip"
+)
+
+
+def _is_library_path(path: str | None) -> bool:
+    return bool(path) and bool(_LIBRARY_PATH_RE.search(path))
+
+
+def _without_library_frames(text: str) -> str:
+    """The text minus traceback frame lines that point into library code."""
+    return _PY_FRAME_RE.sub(
+        lambda m: "" if _is_library_path(m.group(1)) else m.group(0), text
+    )
+
+
+# Platforms and products that look like code in prose ("macOS(Sonoma)", "iOS(17)",
+# "Node.js 18") but are never a function or file in the repository.
+PRODUCT_NAMES = frozenset(
+    name.lower()
+    for name in (
+        "macOS", "OSX", "iOS", "iPadOS", "watchOS", "tvOS", "visionOS", "Android", "Windows",
+        "Linux", "Ubuntu", "Debian", "Fedora", "CentOS", "Alpine", "WSL", "WSL2",
+        "Node", "Node.js", "NodeJS", "Deno", "Bun", "Python", "CPython", "PyPy",
+        "Chrome", "Chromium", "Firefox", "Safari", "Edge", "Electron", "Docker", "Podman",
+        "Kubernetes", "npm", "pnpm", "Yarn", "pip", "pipx", "conda", "Xcode", "VSCode",
+        "GitHub", "GitLab", "Next.js", "Nuxt.js", "Vue.js", "React.js", "Express.js",
+        "Angular.js", "AngularJS", "Ember.js", "Three.js", "Chart.js", "D3.js", "Svelte",
+    )
+)
+
+
+def _is_product_name(value: str | None) -> bool:
+    return bool(value) and value.strip().lower() in PRODUCT_NAMES
+
+
+# ---- (1) repro must be a whole code block
+_INLINE_CODE_RE = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
+
+
+def _whole_code_snippets(text: str) -> set[str]:
+    """Every complete fenced code block and inline `code` span, whitespace-normalised.
+
+    A repro is only accepted if it is one of these exactly: the model (which sees long
+    blocks condensed) must not hand the sandbox the first half of a script, which would
+    run cleanly and turn "it crashes" into a false cannot-reproduce.
+    """
+    blocks = {_normalize(m.group(2)) for m in _BLOCK_RE.finditer(text)}
+    blocks |= {_normalize(m.group(1)) for m in _INLINE_CODE_RE.finditer(text)}
+    return {b for b in blocks if b}
 
 
 _TRACEBACK_MARKERS = re.compile(
@@ -162,6 +239,9 @@ def _apply_guardrails(
     report them as inconclusive) instead of being silently dropped.
     """
     text_normalized = _normalize(text)
+    # Names/files that only appear in library traceback frames don't count as "in the text".
+    project_normalized = _normalize(_without_library_frames(text))
+    snippets = _whole_code_snippets(text)
     kept: list[Claim] = []
     dropped: list[dict] = []
     seen: set[tuple[str, str]] = set()
@@ -178,16 +258,25 @@ def _apply_guardrails(
             continue  # the same claim twice is not a hallucination, just noise
         seen.add(key)
 
-        version = _keep_if_present(item.version, text_normalized)
+        version = _keep_if_token(item.version, text_normalized, "version")
         if item.type == "version_affected" and version is None:
             dropped.append({"type": item.type, "quote": item.quote, "reason": "version_not_in_text"})
             continue
         if len(kept) >= MAX_CLAIMS:
             dropped.append({"type": item.type, "quote": item.quote, "reason": "claim_limit"})
             continue
-        repro = _keep_if_present(item.repro, text_normalized)
+        # The sandbox runs `repro`: it must be a WHOLE code block from the text (never a
+        # cut-off half) and Python source (never a pasted traceback).
+        repro = item.repro if item.repro and _normalize(item.repro) in snippets else None
         if not _is_runnable_python(repro):
-            repro = None  # the sandbox runs this: Python source only, never a traceback
+            repro = None
+        file = None
+        if not _is_library_path(item.file) and not _is_product_name(item.file):
+            file = _keep_if_token(item.file, project_normalized, "file")
+        symbol = _clean_symbol(item.symbol)
+        symbol = None if _is_product_name(symbol) else _keep_if_token(
+            symbol, project_normalized, "symbol"
+        )
         issue_number = item.issue_number
         if issue_number is not None and not re.search(rf"#{issue_number}\b", text):
             issue_number = None
@@ -196,8 +285,8 @@ def _apply_guardrails(
                 id=f"c{len(kept) + 1}",
                 type=item.type,
                 quote=item.quote.strip(),
-                file=_keep_if_present(item.file, text_normalized),
-                symbol=_keep_if_present(_clean_symbol(item.symbol), text_normalized),
+                file=file,
+                symbol=symbol,
                 version=version,
                 expected=item.expected,
                 actual=item.actual,
@@ -217,6 +306,8 @@ TRUNCATION_MARKER = "\n[... truncated by Probe ...]\n"
 
 
 def _shorten_block(match: re.Match) -> str:
+    if _is_runnable_python(match.group(2)):
+        return match.group(0)  # code is kept whole: a repro must never be cut in half
     lines = match.group(2).split("\n")
     keep = CODE_BLOCK_HEAD_LINES + CODE_BLOCK_TAIL_LINES
     if len(lines) <= keep + 1:
@@ -234,8 +325,8 @@ def _condense(text: str) -> str:
     """Shrink an issue for the model without losing its claims.
 
     Drops what carries no checkable claim (template HTML comments, images, checklists),
-    trims long code blocks/logs to their start and end (the end of a traceback names the
-    crash site), then caps the length while keeping the start AND the end of the text.
+    trims long logs/tracebacks (never Python code) to their start and end (the end of a
+    traceback names the crash site), then caps the length while keeping the start AND the end of the text.
     Quotes are still checked against the original text, so nothing here can make an
     invented quote pass.
     """
@@ -303,7 +394,9 @@ class OllamaExtractor:
                 f"{self.base_url}/api/chat", json=self.build_request(text), timeout=self.timeout
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            data = response.json()
+            content = data["message"]["content"]
+            hit_limit = data.get("done_reason") == "length"
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             # 5xx can be transient (e.g. out of memory while loading); 4xx (model missing) is not.
@@ -324,6 +417,11 @@ class OllamaExtractor:
         try:
             return _LLMOutput.model_validate(json.loads(content)).claims
         except (json.JSONDecodeError, TypeError) as exc:
+            if hit_limit:
+                # Temperature 0: asking again gives the same cut-off answer.
+                raise ExtractionError(
+                    f"model answer hit the {MAX_OUTPUT_TOKENS}-token limit", retryable=False
+                ) from exc
             raise ExtractionError("model returned invalid JSON") from exc
         except ValidationError as exc:
             raise ExtractionError(f"model output failed schema ({exc.error_count()} errors)") from exc
@@ -417,6 +515,8 @@ def _symbols_in(sentence: str, files: list[str]) -> list[str]:
     for raw, backticked in candidates:
         if not backticked and not _looks_like_code(raw):
             continue  # "parse(x)" in prose is too ambiguous for a low-confidence path
+        if _is_product_name(raw):
+            continue  # "macOS(Sonoma)", "iOS(17)" are platforms, not functions
         name = raw.rsplit(".", 1)[-1]  # module.func -> func
         if name.lower() in _CALL_STOPWORDS or any(name in f for f in files):
             continue
@@ -465,22 +565,31 @@ def regex_extract(text: str, *, is_pull_request: bool | None = None) -> list[Cla
         fields.setdefault("actual", template.get("actual"))
         add("bug_behavior", quote, repro=repro, **fields)
 
-    # A Python traceback: the innermost frame is where it crashed, the last line is the error.
+    # A Python traceback. The error line follows the innermost frame, but the frame to check
+    # is the innermost one in the PROJECT's code: frames in Python's own library or in
+    # site-packages (e.g. json/decoder.py) are not in the repository.
     frames = list(_PY_FRAME_RE.finditer(text))
     if frames:
-        last = frames[-1]
-        exceptions = [m for m in _EXCEPTION_LINE_RE.finditer(text) if m.start() > last.end()]
-        error = exceptions[0].group(0).strip() if exceptions else None
-        location = f"{last.group(1)}:{last.group(2)}"
-        add_bug(
-            last.group(0).strip(),
-            file=last.group(1),
-            symbol=last.group(3) if last.group(3).isidentifier() else None,
-            actual=f"{error} (at {location})" if error else f"Traceback ends at {location}",
-        )
+        innermost = frames[-1]
+        exceptions = [m for m in _EXCEPTION_LINE_RE.finditer(text) if m.start() > innermost.end()]
+        error = exceptions[0].group(0).strip() if exceptions else "Traceback"
+        raised_at = f"{innermost.group(1)}:{innermost.group(2)}"
+        project = [f for f in frames if not _is_library_path(f.group(1))]
+        if project:
+            frame = project[-1]
+            at = f"{frame.group(1)}:{frame.group(2)}"
+            where = f"at {at}" if frame is innermost else f"in library code {raised_at}, called from {at}"
+            add_bug(
+                frame.group(0).strip(),
+                file=frame.group(1),
+                symbol=frame.group(3) if frame.group(3).isidentifier() else None,
+                actual=f"{error} ({where})",
+            )
+        else:  # the whole traceback is library code: nothing in the repo to point at
+            add_bug(innermost.group(0).strip(), actual=f"{error} (in library code {raised_at})")
 
     for sentence in _sentences(text):
-        files = _FILE_RE.findall(sentence)
+        files = [f for f in _FILE_RE.findall(sentence) if not _is_product_name(f)]
         symbols = _symbols_in(sentence, files)
         file = files[0] if files else None
         symbol = symbols[0] if symbols else None
