@@ -67,3 +67,15 @@ To evaluate Probe's deterministic checkers and decision rules with ground truth 
 - **Demo-repo reproductions**: e.g. self-contained bug reproductions in `examples/repos/shop` verifying failure reproduction (`confirmed`) and clean execution (`cannot-reproduce`).
 
 On the checkable cases group, Probe achieves **100% decided coverage** (5/5) and **100% accuracy on decided cases** (5/5), with 0 false invalid verdicts.
+
+### Gold Claims vs. LLM Extraction (`qwen3:8b`)
+
+Probe supports two evaluation modes:
+1. **Gold Mode (`--mode gold`)**: Evaluates against human-annotated ground-truth claims in [`eval/RESULTS.md`](RESULTS.md).
+   - **Checker Agreement**: 16/16 (100%) in gold mode.
+   - **Coverage on Checkable Cases**: 5/5 (100%), with 100% accuracy on decided cases.
+   - **Wrong `invalid` Verdicts**: 0 across all 17 cases.
+2. **Extracted Mode (`--mode extracted`)**: Evaluates the full end-to-end pipeline using `qwen3:8b` via Ollama on localhost to extract claims from raw issue/PR text in [`eval/RESULTS_extracted.md`](RESULTS_extracted.md).
+   - **Accuracy on Decided Cases**: 5/5 (100%) on checkable cases.
+   - **Wrong `invalid` Verdicts**: 0 across all 17 cases.
+   - **Key Finding**: The local open-source model `qwen3:8b` reliably extracts the essential technical claims (symbols, files, and repro code) from free-form text. Furthermore, Probe's defense-in-depth pipeline (schema validation, verbatim quote verification against source text, and prompt injection isolation) ensures that even if the model extracts extraneous claims, unsupported claims are pruned and only claims with direct code evidence reach deterministic AST and sandbox checkers.
