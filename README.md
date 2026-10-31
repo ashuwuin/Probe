@@ -1,4 +1,4 @@
-# Probe (ClaimCheck)
+# Probe
 
 > **Evidence-Based Open Source Issue and Pull Request Triage**  
 > *Problem 2 — Hacktoberfest Hack Day 2026 (NST × Rishihood University)*
@@ -196,6 +196,12 @@ Probe is evaluated against real closed issues and pull requests from major open-
 - **Panel Q&A & Evaluation Defenses**: See [`docs/ARCHITECTURE.md#11-panel-qa-and-evaluation-defenses`](docs/ARCHITECTURE.md#11-panel-qa-and-evaluation-defenses) for comprehensive technical explanations of real sandbox bug confirmations, infinite loop timeouts, dependency isolation, and non-Python repository safety.
 
 ---
+
+## Known Limitations & Future Work
+
+- **Real-world repros usually need the project's dependencies.** The sandbox image (`python:3.11-slim`) has no third-party packages, so most maintainer-labelled issues stop at `uncertain` (`missing_dependency`). Planned: per-project environment images, built once with network access for chosen benchmark repos and then used with `--network none` for every check. These would never be built automatically for arbitrary repositories, because installing a package runs untrusted code.
+- **Repros in pull requests are not executed.** On a PR the snapshot is the PR's own changed code, so a clean run would mean "the fix works", not "cannot reproduce", and a crash may be a broken fix. These are reported as `inconclusive` until a base-vs-head comparison exists.
+- **Python first.** JS/TS/Rust/Go only get regex-based "does this definition exist" hints.
 
 ## Team & Credits
 
