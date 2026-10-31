@@ -39,8 +39,8 @@
   <rect width="900" height="220" rx="16" fill="url(#banner-bg)" stroke="#30363d" stroke-width="1.5" />
 
   <!-- Ambient Light Orbs -->
-  <circle cx="200" cy="90" r="140" fill="url(#glow-circle)" class="pulse-glow" />
-  <circle cx="720" cy="110" r="120" fill="url(#glow-circle)" class="pulse-glow" />
+  <circle cx="200" cy="90" r="140" fill="url(#glow-circle)" />
+  <circle cx="720" cy="110" r="120" fill="url(#glow-circle)" />
 
   <!-- Decorative Grid / Accent Lines -->
   <g stroke="#ffffff" stroke-opacity="0.04" stroke-width="1">
@@ -56,7 +56,7 @@
   </g>
 
   <!-- Main Banner Content -->
-  <g class="floating-group">
+  <g>
     <!-- Icon & Logo -->
     <text x="50" y="86" class="title-text" fill="url(#text-glow)">🔎 PROBE</text>
     <text x="245" y="68" font-family="ui-monospace, monospace" font-size="11" font-weight="700" fill="#58a6ff" letter-spacing="1">v1.0 · HACKTOBERFEST 2026</text>
@@ -65,34 +65,27 @@
     <text x="50" y="118" class="sub-text">Evidence-Based Open Source Issue &amp; Pull Request Triage Engine</text>
     <text x="50" y="140" class="sub-text" font-size="13" fill="#6e7681">The LLM extracts testable claims · Deterministic AST, PR diffs &amp; isolated Docker sandboxes decide</text>
 
-    <!-- Feature Chips -->
+    <!-- Feature Chips: each pill is wide enough for its label; spread across the banner -->
     <g transform="translate(50, 162)">
-      <!-- Chip 1: Zero-Network Docker -->
       <g filter="url(#badge-shadow)">
-        <rect x="0" y="0" width="180" height="26" rx="13" fill="#161b22" stroke="#238636" stroke-width="1" />
-        <circle cx="12" cy="13" r="4" fill="#3fb950" />
-        <text x="24" y="17" class="chip-text" fill="#7ee787">Docker --network none</text>
+        <rect x="0" y="0" width="185" height="26" rx="13" fill="#161b22" stroke="#238636" stroke-width="1" />
+        <circle cx="14" cy="13" r="4" fill="#3fb950" />
+        <text x="26" y="17" class="chip-text" fill="#7ee787">Docker · no network</text>
       </g>
-
-      <!-- Chip 2: AST Lookups -->
-      <g transform="translate(190, 0)" filter="url(#badge-shadow)">
-        <rect x="0" y="0" width="170" height="26" rx="13" fill="#161b22" stroke="#1f6feb" stroke-width="1" />
-        <circle cx="12" cy="13" r="4" fill="#58a6ff" />
-        <text x="24" y="17" class="chip-text" fill="#a5d6ff">Deterministic AST Analysis</text>
+      <g transform="translate(205, 0)" filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="185" height="26" rx="13" fill="#161b22" stroke="#1f6feb" stroke-width="1" />
+        <circle cx="14" cy="13" r="4" fill="#58a6ff" />
+        <text x="26" y="17" class="chip-text" fill="#a5d6ff">Deterministic AST</text>
       </g>
-
-      <!-- Chip 3: Local Qwen3:8b -->
-      <g transform="translate(370, 0)" filter="url(#badge-shadow)">
-        <rect x="0" y="0" width="155" height="26" rx="13" fill="#161b22" stroke="#8957e5" stroke-width="1" />
-        <circle cx="12" cy="13" r="4" fill="#bc8cff" />
-        <text x="24" y="17" class="chip-text" fill="#d2a8ff">Local qwen3:8b (Ollama)</text>
+      <g transform="translate(410, 0)" filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="185" height="26" rx="13" fill="#161b22" stroke="#8957e5" stroke-width="1" />
+        <circle cx="14" cy="13" r="4" fill="#bc8cff" />
+        <text x="26" y="17" class="chip-text" fill="#d2a8ff">qwen3:8b · Ollama</text>
       </g>
-
-      <!-- Chip 4: Zero Cloud Secrets -->
-      <g transform="translate(535, 0)" filter="url(#badge-shadow)">
-        <rect x="0" y="0" width="150" height="26" rx="13" fill="#161b22" stroke="#d29922" stroke-width="1" />
-        <circle cx="12" cy="13" r="4" fill="#d29922" />
-        <text x="24" y="17" class="chip-text" fill="#e3b341">Zero Cloud AI APIs</text>
+      <g transform="translate(615, 0)" filter="url(#badge-shadow)">
+        <rect x="0" y="0" width="185" height="26" rx="13" fill="#161b22" stroke="#d29922" stroke-width="1" />
+        <circle cx="14" cy="13" r="4" fill="#d29922" />
+        <text x="26" y="17" class="chip-text" fill="#e3b341">Zero cloud AI APIs</text>
       </g>
     </g>
   </g>

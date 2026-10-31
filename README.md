@@ -7,12 +7,11 @@
 [![CI Pipeline](https://github.com/ashuwuin/Probe/actions/workflows/ci.yml/badge.svg)](https://github.com/ashuwuin/Probe/actions/workflows/ci.yml)
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Model](https://img.shields.io/badge/LLM-qwen3%3A8b%20(Ollama)-8A2BE2.svg?logo=ollama&logoColor=white)](https://ollama.com/library/qwen)
-[![Docker Sandbox](https://img.shields.io/badge/sandbox-docker%20(--network%20none)-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Docker Sandbox](https://img.shields.io/badge/sandbox-docker%20%C2%B7%20no%20network-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-Problem%202-orange.svg)](HACKATHON.md)
 
 <p align="center">
-  <b>Evidence-Based Open Source Issue and Pull Request Triage</b><br/>
   <i>Deterministic AST Lookups · Zero-Network Docker Sandbox · Verbatim Quote Anchoring · Local LLM Extraction</i>
 </p>
 
@@ -41,53 +40,11 @@ Maintainers of popular open-source repositories are inundated with bug reports, 
 ## 🏛 Architecture & Pipeline
 
 ```mermaid
-flowchart TD
-    subgraph Ingestion["📥 1. Ingestion Layer"]
-        A1["GitHub Webhook<br/><code>issues.opened</code> / <code>pull_request.*</code>"]
-        A2["Direct CLI / URL<br/><code>probe triage &lt;URL&gt;</code>"]
-        A3["Local Files / Diffs<br/><code>--issue</code> / <code>--pr --diff</code>"]
-    end
-
-    subgraph Extraction["🧠 2. Claim Extraction (qwen3:8b via Ollama)"]
-        B1["Prompt-Injection Delimiters<br/><code>&lt;&lt;&lt;BEGIN_REPORT&gt;&gt;&gt;</code>"] --> B2["Open-Weight LLM<br/><code>qwen3:8b</code> (Ollama)"]
-        B2 --> B3["Pydantic Schema Validation<br/>&amp; Verbatim Quote Verification"]
-        B4["Deterministic Regex Fallback<br/>(Used with <code>--no-llm</code>)"]
-    end
-
-    subgraph Verification["🔬 3. Multi-Vector Deterministic Checkers"]
-        C1["Static AST Analysis<br/><code>probe.verify.static</code><br/>• Symbol/class definitions<br/>• Dotted imports &amp; aliases<br/>• <code>site-packages</code> reverse map"]
-        C2["PR Diff Inspection<br/><code>probe.verify.pr_diff</code><br/>• Added test file detection<br/>• Touched file intersections<br/>• Empty test claim checks"]
-        C3["Hardened Docker Sandbox<br/><code>probe.verify.sandbox</code><br/>• <code>--network none</code> (zero SSRF)<br/>• Non-root <code>65534:65534</code><br/>• 15s timeout · 128 PIDs · 512MB"]
-    end
-
-    subgraph Decision["⚖️ 4. Truth Table & Verdict Engine"]
-        D1["probe.verdict.evaluate_claim_verdict"]
-        D2{"Overall Verdict<br/><code>get_overall_verdict()</code>"}
-        D1 --> D2
-    end
-
-    subgraph Output["📤 5. Evidence Reporting"]
-        E1["Markdown Report Comment<br/>(Posted on GitHub Issue/PR)"]
-        E2["GitHub Label Sync<br/><code>triage:confirmed</code>, <code>triage:invalid</code>..."]
-        E3["CLI Terminal Output<br/>&amp; Structured JSON (<code>--json</code>)"]
-    end
-
-    Ingestion --> Extraction
-    Extraction --> Verification
-    Verification --> Decision
-    D2 --> Output
-
-    classDef ing fill:#1f2937,stroke:#374151,color:#f9fafb;
-    classDef ext fill:#1e1b4b,stroke:#4338ca,color:#e0e7ff;
-    classDef ver fill:#064e3b,stroke:#059669,color:#d1fae5;
-    classDef dec fill:#451a03,stroke:#d97706,color:#fef3c7;
-    classDef out fill:#1e293b,stroke:#0284c7,color:#e0f2fe;
-
-    class A1,A2,A3 ing;
-    class B1,B2,B3,B4 ext;
-    class C1,C2,C3 ver;
-    class D1,D2 dec;
-    class E1,E2,E3 out;
+flowchart LR
+    A["1 · Input<br/>webhook, CLI URL, local file"] --> B["2 · Extract claims<br/>qwen3:8b + quote checks<br/>(regex fallback)"]
+    B --> C["3 · Deterministic checks<br/>static AST · PR diff<br/>Docker sandbox, no network"]
+    C --> D["4 · Verdict rules<br/>per claim, then overall"]
+    D --> E["5 · Report<br/>GitHub comment · CLI · JSON"]
 ```
 
 ### Core Design Principle: The LLM Extracts, Deterministic Code Decides
@@ -107,35 +64,30 @@ Every verdict is computed by deterministic Python code:
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Maintainer as 👤 Maintainer / Contributor
-    participant GH as 🐙 GitHub (Issue/PR Webhook)
-    participant Server as ⚡ Probe Server (probe serve)
-    participant Ollama as 🧠 Local LLM (qwen3:8b)
-    participant AST as 🔍 Static AST Analyzer
-    participant Docker as 🐳 Isolated Docker Sandbox
-    participant Verdict as ⚖️ Truth Table Engine
+    actor User as Maintainer
+    participant GH as GitHub
+    participant Probe
+    participant LLM as qwen3 8b
+    participant AST
+    participant SB as Sandbox
+    participant Rules as Verdict rules
 
-    Maintainer->>GH: Opens Issue/PR or comments "/probe rerun"
-    GH->>Server: Deliver HMAC-SHA256 Signed Webhook
-    Server->>Ollama: Extract claims with anti-injection delimiters
-    Ollama-->>Server: Structured claims (symbols, files, repro code)
-
-    par Deterministic AST & Diff Checks
-        Server->>AST: Search symbol & file definitions in AST
-        AST-->>Server: CheckResult (supports / contradicts / inconclusive)
-    and Sandboxed Reproduction Handling
-        alt Target is an Issue with Repro Script
-            Server->>Docker: Execute script (--network none · 15s timeout)
-            Docker-->>Server: Execution trace (reproduced / ran_clean / missing_dependency)
-        else Target is a Pull Request
-            Server->>Server: Skip execution; mark repro inconclusive (pr_repro_skipped)
-        end
+    User->>GH: Opens issue or PR
+    GH->>Probe: Signed webhook
+    Probe->>LLM: Report text
+    LLM-->>Probe: Claims
+    Probe->>AST: Symbols and files
+    AST-->>Probe: Check outcome
+    alt Issue with a repro
+        Probe->>SB: Run repro, no network
+        SB-->>Probe: Crash, clean run, or missing dep
+    else Pull request
+        Probe->>Probe: Repro not run (pr_head_not_comparable)
     end
-
-    Server->>Verdict: Compute individual & overall verdicts
-    Verdict-->>Server: Evidence Report & Verdict Badges
-    Server->>GH: Post/Update Evidence Comment & Apply Labels
-    GH-->>Maintainer: Transparent Evidence Report Delivered
+    Probe->>Rules: Check outcomes
+    Rules-->>Probe: Verdicts
+    Probe->>GH: Post or update comment
+    GH-->>User: Evidence report
 ```
 
 <div align="center">
@@ -148,36 +100,19 @@ sequenceDiagram
 ## ⚖️ Verdict Matrix
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Unprocessed
-    Unprocessed --> Extracting: Parse Issue/PR Text
-    Extracting --> Verifying: Structured Claims Found
-    Extracting --> Uncertain: No Checkable Claims Found
-
-    state Verifying {
-        [*] --> RouteClaim
-        RouteClaim --> CheckAST: Symbol / File claim
-        RouteClaim --> CheckDiff: PR claim
-        RouteClaim --> RunSandbox: Issue repro script provided
-    }
-
-    Verifying --> Confirmed: Repro script crashes (AssertionError / Exception)
-    Verifying --> Confirmed: PR adds test files (confirms 'pr_adds_tests')
-    Verifying --> CannotReproduce: Repro runs clean with exit code 0
-    Verifying --> Invalid: AST proves symbol or file is non-existent
-    Verifying --> Uncertain: Missing dependency / timeout / 'pr_fixes_issue' claim
-
-    Confirmed --> [*]
-    CannotReproduce --> [*]
-    Invalid --> [*]
-    Uncertain --> [*]
+flowchart LR
+    R["Report"] --> X["Claims"] --> C{"Checks"}
+    C -->|"repro reproduced, or PR adds tests"| V1["confirmed"]
+    C -->|"repro ran clean"| V2["cannot-reproduce"]
+    C -->|"named symbol or file does not exist"| V3["invalid"]
+    C -->|"missing evidence, dependency or repro"| V4["uncertain"]
 ```
 
 | Verdict | Badge | Deterministic Trigger | Maintainer Meaning |
 |---|:---:|---|---|
 | **Confirmed** | ✅ `confirmed` | Sandbox reproduced claimed crash/assertion error, or PR diff verified added tests for a test claim. | A verified bug reproduction or valid test addition. Ready for triage and fixing. |
 | **Cannot Reproduce** | 🚫 `cannot-reproduce` | Repro code executed cleanly with exit code 0 (`ran_clean`) without triggering the claimed failure. | The reporter's script does not fail on the codebase commit. Request reporter clarification. |
-| **Invalid** | ❌ `invalid` | AST check proved the claimed symbol or file does not exist in the codebase (`symbol_not_found` / `file_not_found`). | Factual hallucination or bogus bug report. Safe to close with evidence. |
+| **Invalid** | ❌ `invalid` | AST check proved the claimed symbol or file does not exist in the codebase (`symbol_not_found` / `file_not_found`). | Claim disproved by code evidence (one claim, not necessarily the whole report). The maintainer decides. |
 | **Uncertain** | ⚠️ `uncertain` | Missing reproduction steps, external third-party dependencies, timeout, or inconclusive evidence (e.g. `pr_fixes_issue` claims remain uncertain without execution testing). | Probe never guesses when evidence is missing. Accompanied by missing-info hints. |
 
 > [!NOTE]
