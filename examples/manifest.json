@@ -1,0 +1,131 @@
+[
+  {
+    "id": "01_confirmed_bug",
+    "title": "apply_discount returns the wrong price",
+    "provenance": "synthetic issue against the demo repo examples/repos/shop (the bug is real: apply_discount(100, 10) returns 0.0)",
+    "input": "issues/01_confirmed_bug.md",
+    "repo": {
+      "local": "repos/shop"
+    },
+    "needs_sandbox": true,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0.",
+        "file": "shop/billing.py",
+        "symbol": "apply_discount",
+        "expected": "90.0",
+        "actual": "0.0",
+        "repro": "from shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)\n"
+      }
+    ],
+    "expected_claim_verdicts": {
+      "c1": "confirmed"
+    },
+    "expected_overall": "confirmed"
+  },
+  {
+    "id": "02_invalid_hallucinated_symbol",
+    "title": "Security: parse_url_v2() leaks proxy credentials",
+    "provenance": "synthetic report naming a function that does not exist, checked against the real psf/requests codebase",
+    "input": "issues/02_invalid_hallucinated_symbol.md",
+    "repo": {
+      "github": "psf/requests",
+      "sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157"
+    },
+    "needs_sandbox": false,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "security_vuln",
+        "quote": "`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them",
+        "file": "src/requests/utils.py",
+        "symbol": "parse_url_v2",
+        "actual": "user:password appears in debug logs"
+      }
+    ],
+    "expected_claim_verdicts": {
+      "c1": "invalid"
+    },
+    "expected_overall": "invalid"
+  },
+  {
+    "id": "03_cannot_reproduce",
+    "title": "format_price crashes on negative amounts",
+    "provenance": "synthetic issue against the demo repo (format_price(-5) actually returns '-5.00 INR')",
+    "input": "issues/03_cannot_reproduce.md",
+    "repo": {
+      "local": "repos/shop"
+    },
+    "needs_sandbox": true,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "bug_behavior",
+        "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page.",
+        "symbol": "format_price",
+        "actual": "ValueError: amount must be non-negative",
+        "repro": "from shop.billing import format_price\n\nprint(format_price(-5))\n"
+      }
+    ],
+    "expected_claim_verdicts": {
+      "c1": "cannot-reproduce"
+    },
+    "expected_overall": "cannot-reproduce"
+  },
+  {
+    "id": "04_pr_with_tests",
+    "title": "Raise InvalidUrl if host starts with '.' character.",
+    "provenance": "real merged pull request psf/requests#5414 (description and diff copied from GitHub)",
+    "source_url": "https://github.com/psf/requests/pull/5414",
+    "input": "prs/04_pr_with_tests.md",
+    "diff": "prs/04_pr_with_tests.diff",
+    "repo": {
+      "github": "psf/requests",
+      "sha": "658c10e84a461e5298199f20f17b510b90ac478a"
+    },
+    "needs_sandbox": false,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "pr_adds_tests",
+        "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`."
+      }
+    ],
+    "expected_claim_verdicts": {
+      "c1": "confirmed"
+    },
+    "expected_overall": "confirmed"
+  },
+  {
+    "id": "05_pr_missing_tests",
+    "title": "Fix discount calculation",
+    "provenance": "synthetic pull request against the demo repo: it claims tests but changes only shop/billing.py",
+    "input": "prs/05_pr_missing_tests.md",
+    "diff": "prs/05_pr_missing_tests.diff",
+    "repo": {
+      "local": "repos/shop"
+    },
+    "needs_sandbox": false,
+    "claims": [
+      {
+        "id": "c1",
+        "type": "pr_adds_tests",
+        "quote": "adds unit tests for apply_discount"
+      },
+      {
+        "id": "c2",
+        "type": "pr_fixes_issue",
+        "quote": "Fixes the discount calculation in `apply_discount()`",
+        "file": "shop/billing.py",
+        "symbol": "apply_discount"
+      }
+    ],
+    "expected_claim_verdicts": {
+      "c1": "invalid",
+      "c2": "uncertain"
+    },
+    "expected_overall": "uncertain"
+  }
+]

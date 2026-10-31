@@ -1,0 +1,27 @@
+{
+  "id": "loguru-1471",
+  "url": "https://github.com/Delgan/loguru/issues/1471",
+  "kind": "issue",
+  "label": "invalid",
+  "maintainer_labels": [
+    "invalid"
+  ],
+  "state_reason": "completed",
+  "created_at": "2026-05-18T20:24:03+00:00",
+  "sha": "75b920160d0655c1631a2739b4470fc12317a155",
+  "sha_resolved_by": "default_branch_at:2026-05-18T20:24:03+00:00",
+  "note": "Label 'invalid'. Includes a runnable repro; the named function exists, so static checks cannot refute it.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "This is a race condition in `_terminate_file()` that was previously reported in #519 and #220 but was never fully fixed.",
+      "symbol": "_terminate_file",
+      "actual": "FileNotFoundError",
+      "version": "0.7.3"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "supports"
+  }
+}

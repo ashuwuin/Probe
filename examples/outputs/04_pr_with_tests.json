@@ -1,0 +1,55 @@
+{
+  "id": "04_pr_with_tests",
+  "title": "Raise InvalidUrl if host starts with '.' character.",
+  "source": "[psf/requests@658c10e](https://github.com/psf/requests/tree/658c10e84a461e5298199f20f17b510b90ac478a)",
+  "provenance": "real merged pull request psf/requests#5414 (description and diff copied from GitHub)",
+  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "overall": "confirmed",
+  "expected_overall": "confirmed",
+  "expected_claim_verdicts": {
+    "c1": "confirmed"
+  },
+  "status": "matches expected",
+  "claims": [
+    {
+      "id": "c1",
+      "type": "pr_adds_tests",
+      "file": null,
+      "symbol": null,
+      "version": null,
+      "expected": null,
+      "actual": null,
+      "repro": null,
+      "issue_number": null,
+      "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`."
+    }
+  ],
+  "checks": {
+    "c1": [
+      {
+        "claim_id": "c1",
+        "checker": "pr_diff",
+        "outcome": "supports",
+        "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py.",
+        "line_number": null,
+        "details": {
+          "reason": "tests_added",
+          "test_files": [
+            "tests/test_requests.py"
+          ],
+          "added_tests": [],
+          "confidence": "high"
+        }
+      }
+    ]
+  },
+  "verdicts": [
+    {
+      "claim_id": "c1",
+      "status": "confirmed",
+      "confidence": "high",
+      "evidence": "The diff adds lines to 1 test file(s): tests/test_requests.py.",
+      "quote": "I've added `InvalidUrl` tests for `http://.example.com` and `http://*example.com`."
+    }
+  ]
+}

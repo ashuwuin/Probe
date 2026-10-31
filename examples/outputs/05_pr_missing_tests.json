@@ -1,0 +1,92 @@
+{
+  "id": "05_pr_missing_tests",
+  "title": "Fix discount calculation",
+  "source": "`examples/repos/shop` (demo repo)",
+  "provenance": "synthetic pull request against the demo repo: it claims tests but changes only shop/billing.py",
+  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "overall": "uncertain",
+  "expected_overall": "uncertain",
+  "expected_claim_verdicts": {
+    "c1": "invalid",
+    "c2": "uncertain"
+  },
+  "status": "matches expected",
+  "claims": [
+    {
+      "id": "c1",
+      "type": "pr_adds_tests",
+      "file": null,
+      "symbol": null,
+      "version": null,
+      "expected": null,
+      "actual": null,
+      "repro": null,
+      "issue_number": null,
+      "quote": "adds unit tests for apply_discount"
+    },
+    {
+      "id": "c2",
+      "type": "pr_fixes_issue",
+      "file": "shop/billing.py",
+      "symbol": "apply_discount",
+      "version": null,
+      "expected": null,
+      "actual": null,
+      "repro": null,
+      "issue_number": null,
+      "quote": "Fixes the discount calculation in `apply_discount()`"
+    }
+  ],
+  "checks": {
+    "c1": [
+      {
+        "claim_id": "c1",
+        "checker": "pr_diff",
+        "outcome": "contradicts",
+        "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
+        "line_number": null,
+        "details": {
+          "reason": "no_test_files",
+          "changed_files": [
+            "shop/billing.py"
+          ],
+          "confidence": "medium",
+          "note": "Tests in non-standard locations are not detected."
+        }
+      }
+    ],
+    "c2": [
+      {
+        "claim_id": "c2",
+        "checker": "pr_diff",
+        "outcome": "supports",
+        "evidence": "The PR modifies `shop/billing.py`, which the linked issue names. This shows the PR touches the reported code, not that the fix is correct.",
+        "line_number": null,
+        "details": {
+          "reason": "issue_target_touched",
+          "touched_files": [
+            "shop/billing.py"
+          ],
+          "symbol_files": [],
+          "confidence": "low"
+        }
+      }
+    ]
+  },
+  "verdicts": [
+    {
+      "claim_id": "c1",
+      "status": "invalid",
+      "confidence": "medium",
+      "evidence": "The PR changes 1 file(s) but none is a test file, and the diff adds no test functions.",
+      "quote": "adds unit tests for apply_discount"
+    },
+    {
+      "claim_id": "c2",
+      "status": "uncertain",
+      "confidence": "low",
+      "evidence": "Not enough evidence to decide. The PR modifies `shop/billing.py`, which the linked issue names. This shows the PR touches the reported code, not that the fix is correct.",
+      "quote": "Fixes the discount calculation in `apply_discount()`"
+    }
+  ]
+}

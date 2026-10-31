@@ -1,0 +1,57 @@
+{
+  "id": "03_cannot_reproduce",
+  "title": "format_price crashes on negative amounts",
+  "source": "`examples/repos/shop` (demo repo)",
+  "provenance": "synthetic issue against the demo repo (format_price(-5) actually returns '-5.00 INR')",
+  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "overall": "uncertain",
+  "expected_overall": "cannot-reproduce",
+  "expected_claim_verdicts": {
+    "c1": "cannot-reproduce"
+  },
+  "status": "pending sandbox",
+  "claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "file": null,
+      "symbol": "format_price",
+      "version": null,
+      "expected": null,
+      "actual": "ValueError: amount must be non-negative",
+      "repro": "from shop.billing import format_price\n\nprint(format_price(-5))\n",
+      "issue_number": null,
+      "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page."
+    }
+  ],
+  "checks": {
+    "c1": [
+      {
+        "claim_id": "c1",
+        "checker": "static_ast",
+        "outcome": "supports",
+        "evidence": "`format_price` is defined in `shop/billing.py` at line 11 (function).",
+        "line_number": 11,
+        "details": {
+          "file": "shop/billing.py",
+          "kind": "function",
+          "qualname": "format_price",
+          "reason": "symbol_found",
+          "confidence": "high",
+          "file_mismatch": false,
+          "matches": 1,
+          "other_locations": []
+        }
+      }
+    ]
+  },
+  "verdicts": [
+    {
+      "claim_id": "c1",
+      "status": "uncertain",
+      "confidence": "low",
+      "evidence": "Not enough evidence to decide. `format_price` is defined in `shop/billing.py` at line 11 (function).",
+      "quote": "Calling `format_price()` with a negative refund amount crashes the checkout page."
+    }
+  ]
+}

@@ -353,3 +353,187 @@ def test_normalize_claim_path():
     for bad in ["../x", "a/../../b", "C:/x", "", "a\x00b"]:
         with pytest.raises(PathEscapeError):
             normalize_claim_path(bad)
+
+
+# ---------------------------------------------------------------- external code (dependencies)
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py",
+        "C:\\Python311\\Lib\\site-packages\\rich\\text.py",
+        "/usr/lib/python3/dist-packages/foo.py",
+    ],
+)
+def test_file_inside_installed_dependency_is_inconclusive(repo, path):
+    result = check_static_symbol(repo, claim("__init__", path))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_file"
+
+
+def test_made_up_dotted_name_without_dependency_evidence_contradicts(repo):
+    """PaymentGateway is not defined, imported or declared anywhere: absence is real evidence."""
+    result = check_static_symbol(repo, claim("PaymentGateway.charge"))
+    assert result.outcome == "contradicts"
+    assert result.details["reason"] == "symbol_not_found"
+
+
+@pytest.mark.parametrize(
+    ("import_line", "symbol"),
+    [
+        ("import rich\n", "rich.Text.from_markup"),
+        ("from rich.text import Text\n", "Text.from_markup"),
+        ("import numpy as np\n", "np.frombuffer"),
+        ("from requests import Session\n", "requests.get"),
+    ],
+)
+def test_dotted_symbol_imported_from_dependency_is_inconclusive(repo, import_line, symbol):
+    (repo / "src" / "payments" / "render.py").write_text(import_line)
+    result = check_static_symbol(repo, claim(symbol))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_module"
+    assert "imported from outside" in result.evidence
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("pyproject.toml", '[project]\nname = "poetry"\ndependencies = ["poetry-core (>=1.0)", "cleo>=2"]\n'),
+        ("pyproject.toml", '[tool.poetry.dependencies]\npython = "^3.8"\n"poetry-core" = "1.4.0"\n'),
+        ("requirements.txt", "# pinned\ncleo==2.0\nPoetry_Core>=1.0  # core\n-r other.txt\n"),
+        ("setup.cfg", "[options]\ninstall_requires =\n    cleo\n    poetry-core>=1.0\n"),
+        ("setup.py", 'from setuptools import setup\nsetup(install_requires=["cleo", "poetry.core>=1"])\n'),
+    ],
+)
+def test_dotted_prefix_matching_declared_dependency_is_inconclusive(repo, filename, content):
+    (repo / filename).write_text(content)
+    result = check_static_symbol(repo, claim("poetry.core.vcs.git.ParsedUrl.parse"))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_module"
+    assert "poetry_core" in result.evidence
+
+
+def test_import_of_repo_own_package_is_not_external(repo):
+    (repo / "src" / "app.py").write_text("from payments import billing\nimport payments\n")
+    result = check_static_symbol(repo, claim("billing.refund_everything"))
+    assert result.outcome == "contradicts"
+
+
+def test_relative_imports_are_not_external(repo):
+    (repo / "src" / "payments" / "api.py").write_text("from .gateway import Gateway\n")
+    result = check_static_symbol(repo, claim("Gateway.charge"))
+    assert result.outcome == "contradicts"
+
+
+def test_malformed_dependency_files_do_not_crash(repo):
+    (repo / "pyproject.toml").write_text("this is [not toml")
+    (repo / "setup.cfg").write_text("[options\nbroken")
+    assert check_static_symbol(repo, claim("PaymentGateway.charge")).outcome == "contradicts"
+
+
+def test_dotted_symbol_with_local_module_prefix_can_still_contradict(repo):
+    result = check_static_symbol(repo, claim("billing.refund_everything"))
+    assert result.outcome == "contradicts"
+
+
+def test_dotted_symbol_with_local_class_prefix_can_still_contradict(repo):
+    result = check_static_symbol(repo, claim("Invoice.refund_everything"))
+    assert result.outcome == "contradicts"
+
+
+# ---------------------------------------------------------------- re-exports and messages
+
+def test_package_reexport_is_supported_with_medium_confidence(tmp_path):
+    pkg = tmp_path / "src" / "requests"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("from .api import get\n")
+    (pkg / "api.py").write_text("def get(url):\n    return url\n")
+    result = check_static_symbol(tmp_path, claim("requests.get"))
+    assert result.outcome == "supports"
+    assert result.details["reason"] == "symbol_found_reexport"
+    assert result.details["confidence"] == "medium"
+    assert result.details["file"] == "src/requests/api.py"
+
+
+def test_reexport_does_not_match_methods_or_wrong_package(tmp_path):
+    pkg = tmp_path / "shop"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "api.py").write_text("class Client:\n    def get(self):\n        pass\n")
+    assert check_static_symbol(tmp_path, claim("shop.get")).details["reason"] != "symbol_found_reexport"
+    (tmp_path / "other.py").write_text("def get():\n    pass\n")
+    assert check_static_symbol(tmp_path, claim("shop.get")).details["reason"] != "symbol_found_reexport"
+
+
+def test_message_when_named_file_exists_but_symbol_missing(repo):
+    result = check_static_symbol(repo, claim("parse_url_v2", "src/payments/billing.py"))
+    assert result.outcome == "contradicts"
+    assert "not defined in the named file `src/payments/billing.py`" in result.evidence
+    assert "was not found" not in result.evidence
+
+
+# ---------------------------------------------------------------- installed copies of this project
+
+@pytest.fixture
+def src_layout_repo(tmp_path):
+    pkg = tmp_path / "src" / "payments"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    shutil.copy(FIXTURES / "billing.py", pkg / "billing.py")
+    core = tmp_path / "src" / "poetry"          # namespace dir without core/
+    core.mkdir()
+    (core / "__init__.py").write_text("def __init__():\n    pass\n")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/u/.venv/lib/python3.12/site-packages/payments/billing.py",
+        "C:\\Python311\\Lib\\site-packages\\payments\\billing.py",
+        "/usr/lib/python3/dist-packages/payments/billing.py",
+        "`~/.local/lib/python3.11/site-packages/payments/billing.py`",
+    ],
+)
+def test_installed_copy_of_this_project_maps_to_src_layout(src_layout_repo, path):
+    result = check_static_symbol(src_layout_repo, claim("calculate_tax", path))
+    assert result.outcome == "supports"
+    assert result.details["file"] == "src/payments/billing.py"
+    assert result.details["confidence"] == "high"
+
+
+def test_installed_copy_maps_to_flat_layout(repo):
+    # `repo` fixture has src/payments/billing.py; build a flat-layout package too
+    (repo / "shop").mkdir()
+    (repo / "shop" / "cart.py").write_text("def add_item():\n    pass\n")
+    result = check_static_symbol(repo, claim("add_item", "/x/site-packages/shop/cart.py"))
+    assert result.outcome == "supports" and result.details["file"] == "shop/cart.py"
+
+
+def test_installed_copy_symbol_missing_in_mapped_file_can_contradict(src_layout_repo):
+    result = check_static_symbol(src_layout_repo, claim("refund_everything", "/x/site-packages/payments/billing.py"))
+    assert result.outcome == "contradicts"
+    assert "not defined in the named file `src/payments/billing.py`" in result.evidence
+
+
+def test_namespace_package_from_other_distribution_stays_external(src_layout_repo):
+    """poetry#9961: site-packages/poetry/core/... is poetry-core, not this repo's src/poetry/."""
+    path = "~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py"
+    result = check_static_symbol(src_layout_repo, claim("__init__", path))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_file"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/x/site-packages/numpy/core/numeric.py",       # package not in repo
+        "/x/site-packages/payments",                     # no file part
+        "/x/site-packages/../../etc/passwd",             # traversal after the segment
+        "/x/site-packages/payments/../../../secret.py",
+    ],
+)
+def test_unmappable_installed_paths_stay_external(src_layout_repo, path):
+    result = check_static_symbol(src_layout_repo, claim("calculate_tax", path))
+    assert result.outcome == "inconclusive"
+    assert result.details["reason"] == "external_file"

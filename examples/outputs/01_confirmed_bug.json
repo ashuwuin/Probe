@@ -1,0 +1,55 @@
+{
+  "id": "01_confirmed_bug",
+  "title": "apply_discount returns the wrong price",
+  "source": "`examples/repos/shop` (demo repo)",
+  "provenance": "synthetic issue against the demo repo examples/repos/shop (the bug is real: apply_discount(100, 10) returns 0.0)",
+  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "overall": "uncertain",
+  "expected_overall": "confirmed",
+  "expected_claim_verdicts": {
+    "c1": "confirmed"
+  },
+  "status": "pending sandbox",
+  "claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "file": "shop/billing.py",
+      "symbol": "apply_discount",
+      "version": null,
+      "expected": "90.0",
+      "actual": "0.0",
+      "repro": "from shop.billing import apply_discount\n\nassert apply_discount(100, 10) == 90.0, apply_discount(100, 10)\n",
+      "issue_number": null,
+      "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0."
+    }
+  ],
+  "checks": {
+    "c1": [
+      {
+        "claim_id": "c1",
+        "checker": "static_ast",
+        "outcome": "supports",
+        "evidence": "`apply_discount` is defined in `shop/billing.py` at line 6 (function).",
+        "line_number": 6,
+        "details": {
+          "file": "shop/billing.py",
+          "kind": "function",
+          "qualname": "apply_discount",
+          "reason": "symbol_found",
+          "confidence": "high",
+          "matches": 1
+        }
+      }
+    ]
+  },
+  "verdicts": [
+    {
+      "claim_id": "c1",
+      "status": "uncertain",
+      "confidence": "low",
+      "evidence": "Not enough evidence to decide. `apply_discount` is defined in `shop/billing.py` at line 6 (function).",
+      "quote": "`apply_discount()` in `shop/billing.py` returns 0.0 for a 10% discount on 100 instead of 90.0."
+    }
+  ]
+}

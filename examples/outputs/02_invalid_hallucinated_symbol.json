@@ -1,0 +1,54 @@
+{
+  "id": "02_invalid_hallucinated_symbol",
+  "title": "Security: parse_url_v2() leaks proxy credentials",
+  "source": "[psf/requests@3c7baaa](https://github.com/psf/requests/tree/3c7baaa05ab4aa49cc819ce3a819d260de19c157)",
+  "provenance": "synthetic report naming a function that does not exist, checked against the real psf/requests codebase",
+  "verdict_source": "baseline rules (probe.verdict not available yet)",
+  "overall": "invalid",
+  "expected_overall": "invalid",
+  "expected_claim_verdicts": {
+    "c1": "invalid"
+  },
+  "status": "matches expected",
+  "claims": [
+    {
+      "id": "c1",
+      "type": "security_vuln",
+      "file": "src/requests/utils.py",
+      "symbol": "parse_url_v2",
+      "version": null,
+      "expected": null,
+      "actual": "user:password appears in debug logs",
+      "repro": null,
+      "issue_number": null,
+      "quote": "`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them"
+    }
+  ],
+  "checks": {
+    "c1": [
+      {
+        "claim_id": "c1",
+        "checker": "static_ast",
+        "outcome": "contradicts",
+        "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+        "line_number": null,
+        "details": {
+          "reason": "symbol_not_found",
+          "confidence": "high",
+          "files_scanned": 37,
+          "parse_errors": [],
+          "truncated": false
+        }
+      }
+    ]
+  },
+  "verdicts": [
+    {
+      "claim_id": "c1",
+      "status": "invalid",
+      "confidence": "high",
+      "evidence": "`parse_url_v2` is not defined or mentioned in any of the 37 Python file(s) in the repository. It is not defined in the named file `src/requests/utils.py`.",
+      "quote": "`parse_url_v2()` in `src/requests/utils.py` does not strip the userinfo part of proxy URLs before logging them"
+    }
+  ]
+}

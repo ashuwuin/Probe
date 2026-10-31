@@ -1,0 +1,29 @@
+{
+  "id": "poetry-9961",
+  "url": "https://github.com/python-poetry/poetry/issues/9961",
+  "kind": "issue",
+  "label": "confirmed",
+  "maintainer_labels": [
+    "kind/bug",
+    "status/confirmed"
+  ],
+  "state_reason": "completed",
+  "created_at": "2025-01-06T11:38:32+00:00",
+  "sha": "97812e956ccc872b91f04201eea1700fa3e75152",
+  "sha_resolved_by": "default_branch_at:2025-01-06T11:38:32+00:00",
+  "note": "Labels 'kind/bug' + 'status/confirmed'. The traceback points into poetry-core (a dependency), not this repo.",
+  "gold_claims": [
+    {
+      "id": "c1",
+      "type": "bug_behavior",
+      "quote": "calling a script via `poetry run` always fails with a KeyError",
+      "file": "~/.local/share/pipx/venvs/poetry/lib/python3.12/site-packages/poetry/core/masonry/utils/module.py",
+      "symbol": "__init__",
+      "actual": "KeyError: 'format'",
+      "version": "2.0.0"
+    }
+  ],
+  "expected_outcomes": {
+    "c1": "inconclusive"
+  }
+}
