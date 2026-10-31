@@ -105,14 +105,15 @@ def post_or_update_comment(
 
     SECURITY GUARANTEE:
     Uses find_editable_bot_comment to match existing comments. Only comments that
-    contain REPORT_MARKER and were authored by Probe's bot account are edited.
+    contain REPORT_MARKER and were authored by Probe's bot account (or the authenticated
+    user when using personal tokens) are edited.
     Never overwrites user or third-party bot comments.
     """
     tok = token if token is not None else os.environ.get("GITHUB_TOKEN")
     if not tok:
         raise ValueError("GITHUB_TOKEN is required to post or update comments on GitHub")
 
-    active_bot_login = bot_login or os.getenv("PROBE_BOT_LOGIN", "probe[bot]")
+    active_bot_login = bot_login or os.getenv("PROBE_BOT_LOGIN")
 
     headers = {
         "Accept": "application/vnd.github+json",
@@ -125,14 +126,38 @@ def post_or_update_comment(
     close_client = client is None
 
     try:
-        # Fetch existing comments on this issue / PR
-        res = http.get(f"/repos/{owner}/{repo}/issues/{issue_number}/comments", params={"per_page": 100})
-        res.raise_for_status()
-        comments = res.json()
-        if not isinstance(comments, list):
-            comments = []
+        # If PROBE_BOT_LOGIN is not set, discover the authenticated user's login via GET /user
+        if not active_bot_login:
+            try:
+                user_res = http.get("/user")
+                if user_res.status_code == 200:
+                    user_data = user_res.json()
+                    if isinstance(user_data, dict) and user_data.get("login"):
+                        active_bot_login = user_data["login"]
+            except Exception:
+                pass
+            if not active_bot_login:
+                active_bot_login = "probe[bot]"
 
-        existing = find_editable_bot_comment(comments, bot_login=active_bot_login)
+        # Paginate through comments to ensure earlier comments past the first 100 are found
+        comments: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            res = http.get(
+                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                params={"per_page": 100, "page": page},
+            )
+            res.raise_for_status()
+            batch = res.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            comments.extend(batch)
+            if len(batch) < 100 or page >= 10:
+                break
+            page += 1
+
+        # Search newest-first so the latest bot report is updated
+        existing = find_editable_bot_comment(list(reversed(comments)), bot_login=active_bot_login)
 
         if existing and "id" in existing:
             comment_id = existing["id"]
@@ -424,6 +449,8 @@ def run_triage_pipeline(
     is_pull_request: bool | None = None,
     use_llm: bool = True,
     model: str = DEFAULT_MODEL,
+    diff_truncated: bool = False,
+    changed_files_truncated: bool = False,
 ) -> tuple[ClaimsResponse, list[CheckResult], list[VerdictResult], VerdictStatus, str]:
     """Runs the complete triage pipeline on input text and repository context."""
     # Infer is_pull_request if not explicitly passed
@@ -446,6 +473,19 @@ def run_triage_pipeline(
         # Check B: PR Diff (for PR tests and bug fix targeting)
         if claim.type in ("pr_adds_tests", "pr_fixes_issue") or raw_diff:
             res = check_pr_claim(claim, changed_files=files_list, raw_diff=raw_diff)
+            # If the diff or file list was truncated, avoid false "contradicts" / "invalid"
+            if (diff_truncated or changed_files_truncated) and claim.type in ("pr_adds_tests", "pr_fixes_issue"):
+                res = CheckResult(
+                    claim_id=claim.id,
+                    checker="pr_diff",
+                    outcome="inconclusive",
+                    evidence=(
+                        "PR diff or changed file list was truncated by size limits; "
+                        "cannot conclusively verify whether tests were added or files were changed."
+                    ),
+                    line_number=None,
+                    details={"diff_truncated": diff_truncated, "changed_files_truncated": changed_files_truncated},
+                )
             all_results.append(res)
 
         # Check C: Docker Sandbox Reproduction (for behavioral crashes)
@@ -669,6 +709,10 @@ def main() -> None:
 
         # 1. Check if target is a GitHub Issue or Pull Request URL
         gh_target: GitHubTarget | None = None
+        changed_files: list[str] = []
+        diff_truncated = False
+        changed_files_truncated = False
+
         if "github.com" in target_str or target_str.startswith(("http://", "https://")):
             try:
                 gh_target = parse_github_url(target_str)
@@ -677,25 +721,28 @@ def main() -> None:
 
         if gh_target is not None:
             try:
-                client = GitHubClient()
-                if gh_target.kind == "issue":
-                    issue_data = client.get_issue(gh_target.owner, gh_target.repo, gh_target.number)
-                    text = f"{issue_data.title}\n\n{issue_data.body}" if issue_data.body else issue_data.title
-                    if is_pr is None:
-                        is_pr = False
-                    if repo_path is None:
-                        snapshot = client.snapshot_for_issue(issue_data)
-                        repo_path = snapshot.path
-                else:
-                    pull_data = client.get_pull(gh_target.owner, gh_target.repo, gh_target.number)
-                    text = f"{pull_data.title}\n\n{pull_data.body}" if pull_data.body else pull_data.title
-                    if not raw_diff:
-                        raw_diff = pull_data.diff
-                    if is_pr is None:
-                        is_pr = True
-                    if repo_path is None:
-                        snapshot = client.snapshot_for_pull(pull_data)
-                        repo_path = snapshot.path
+                with GitHubClient() as client:
+                    if gh_target.kind == "issue":
+                        issue_data = client.get_issue(gh_target.owner, gh_target.repo, gh_target.number)
+                        text = f"{issue_data.title}\n\n{issue_data.body}" if issue_data.body else issue_data.title
+                        if is_pr is None:
+                            is_pr = False
+                        if repo_path is None:
+                            snapshot = client.snapshot_for_issue(issue_data)
+                            repo_path = snapshot.path
+                    else:
+                        pull_data = client.get_pull(gh_target.owner, gh_target.repo, gh_target.number)
+                        text = f"{pull_data.title}\n\n{pull_data.body}" if pull_data.body else pull_data.title
+                        if not raw_diff:
+                            raw_diff = pull_data.diff
+                        changed_files = pull_data.changed_files
+                        diff_truncated = pull_data.diff_truncated
+                        changed_files_truncated = pull_data.changed_files_truncated
+                        if is_pr is None:
+                            is_pr = True
+                        if repo_path is None:
+                            snapshot = client.snapshot_for_pull(pull_data)
+                            repo_path = snapshot.path
 
                 if not repo_name:
                     repo_name = gh_target.full_name
@@ -761,9 +808,12 @@ def main() -> None:
             text=text,
             repo_root=repo_path,
             raw_diff=raw_diff,
+            changed_files=changed_files,
             is_pull_request=is_pr,
             use_llm=not args.no_llm,
             model=args.model,
+            diff_truncated=diff_truncated,
+            changed_files_truncated=changed_files_truncated,
         )
 
         md_report = render_markdown_report(
