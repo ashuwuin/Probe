@@ -28,6 +28,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -e .
+
+      - name: CLI Entry Point Smoke Test
+        run: |
+          probe --help
+          probe triage --help
 
       - name: Security Scan (Rule 3 - No API Keys or Secrets)
         run: |

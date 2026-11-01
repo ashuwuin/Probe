@@ -26,10 +26,7 @@ import re
 import threading
 from typing import Any
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
+from dotenv import find_dotenv, load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -37,6 +34,11 @@ from probe.cli import find_editable_bot_comment, run_triage_pipeline
 from probe.github_auth import get_client_for_installation
 from probe.github_client import GitHubClient, GitHubError
 from probe.report import generate_markdown_report
+
+# Also covers running `uvicorn probe.app:app` directly; already-set variables win.
+load_dotenv(find_dotenv(usecwd=True))
+
+_MAINTAINER_ROLES = ("OWNER", "MEMBER", "COLLABORATOR")
 
 logger = logging.getLogger("probe.app")
 
@@ -271,8 +273,9 @@ async def github_webhook(
                 content={"status": "already_queued", "target": f"{owner}/{repo}#{number}"},
             )
 
-        author_assoc = (issue.get("author_association") or "").upper()
-        allow_sandbox = author_assoc in ("OWNER", "MEMBER", "COLLABORATOR")
+        # Running a stranger's repro in Docker needs a maintainer: either the issue author is
+        # one, or a maintainer later comments `/probe rerun`.
+        allow_sandbox = (issue.get("author_association") or "").upper() in _MAINTAINER_ROLES
 
         _ACTIVE_JOBS.add(dedup_key)
         background_tasks.add_task(
@@ -327,7 +330,7 @@ async def github_webhook(
             or head_repo.get("full_name") != base_repo.get("full_name")
         )
         author_assoc = (pr.get("author_association") or "").upper()
-        is_maintainer = author_assoc in ("OWNER", "MEMBER", "COLLABORATOR")
+        is_maintainer = author_assoc in _MAINTAINER_ROLES
 
         # Skip sandbox on fork PRs unless author is a trusted maintainer
         allow_sandbox = not (is_fork and not is_maintainer)
@@ -397,7 +400,7 @@ async def github_webhook(
         issue = payload.get("issue") or {}
         issue_author = ((issue.get("user") or {}).get("login") or "").lower()
 
-        is_maintainer = author_assoc in ("OWNER", "MEMBER", "COLLABORATOR")
+        is_maintainer = author_assoc in _MAINTAINER_ROLES
         is_author = bool(user_login and user_login == issue_author)
 
         if not (is_maintainer or is_author):
@@ -420,10 +423,9 @@ async def github_webhook(
                 content={"status": "already_queued", "target": f"{owner}/{repo}#{number}"},
             )
 
-        # On PRs, only a maintainer can authorize Docker sandbox execution.
-        # For non-maintainers (such as fork PR authors), sandbox remains disabled.
-        # For standard issues, sandbox is allowed.
-        allow_sandbox = is_maintainer if is_pr else True
+        # Only a maintainer's rerun may run the issue's repro in Docker. PR repros are never
+        # run (the PR head is not comparable to the reported bug), whatever this flag says.
+        allow_sandbox = is_maintainer
 
         _ACTIVE_JOBS.add(dedup_key)
         background_tasks.add_task(

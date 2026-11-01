@@ -47,9 +47,8 @@ PYTHONPATH=src python eval/benchmark.py --mode extracted  # LLM claims (needs pr
 Snapshots are downloaded once and cached by SHA in `~/.cache/probe/repos`.
 Set `GITHUB_TOKEN` for higher rate limits.
 
-Verdicts come from `probe.verdict.decide_claim(claim, results)` when that exists.
-Until then a conservative baseline in `probe/evaluation.py` is used, and
-`RESULTS.md` says which one produced the numbers.
+Verdicts come from Probe's real rules in `probe.verdict` (the conservative baseline in
+`probe/evaluation.py` is only a fallback), and `RESULTS.md` says which one produced the numbers.
 
 ## Current status (honest reading)
 

@@ -229,7 +229,7 @@ probe serve --port 8000
 ```
 
 - **Supported Webhook Events**: Automatically triages on `issues.opened`, `issues.edited` (when body content changes), and `pull_request.opened` / `pull_request.synchronize`.
-- **Interactive Commands**: Responds to `/probe rerun` comments posted on issues and PRs (allowed for maintainers—`OWNER`, `MEMBER`, `COLLABORATOR`—or the issue's author; on PRs, only maintainers enable Docker sandbox execution).
+- **Interactive Commands**: Responds to `/probe rerun` comments posted on issues and PRs (allowed for maintainers—`OWNER`, `MEMBER`, `COLLABORATOR`—or the issue's author; only a maintainer's rerun runs an issue's repro in the Docker sandbox, and PR repros are never run).
 - **Environment Configuration** (`.env`):
   - `GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_PRIVATE_KEY` / `GITHUB_PRIVATE_KEY_PATH`
   - `PROBE_APPLY_LABELS`: Automatically applies GitHub labels matching verdicts (e.g. `triage:confirmed`, `triage:invalid`, `triage:cannot-reproduce`, `triage:uncertain`). Off by default (`false`).

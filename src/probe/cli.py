@@ -26,11 +26,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
-load_dotenv()
 
 import httpx
+from dotenv import find_dotenv, load_dotenv
 
 from probe.github_client import (
     GitHubClient,
@@ -497,8 +495,11 @@ def run_triage_pipeline(
                     claim_id=claim.id,
                     checker="sandbox",
                     outcome="inconclusive",
-                    evidence="Sandbox execution skipped for untrusted fork PR; requires maintainer /probe rerun authorization.",
-                    details={"skipped_reason": "untrusted_fork"},
+                    evidence=(
+                        "Repro not run: the issue author is not a maintainer. "
+                        "A maintainer can comment `/probe rerun` to run it in the sandbox."
+                    ),
+                    details={"reason": "sandbox_requires_maintainer", "skipped_reason": "sandbox_requires_maintainer"},
                 )
             all_results.append(res)
 
@@ -672,6 +673,9 @@ def render_markdown_report(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Read .env from the current directory (as docs/GITHUB_APP.md describes); never overrides
+    # variables that are already set in the environment.
+    load_dotenv(find_dotenv(usecwd=True))
     parser = argparse.ArgumentParser(
         prog="probe",
         description=(
@@ -739,6 +743,15 @@ def main() -> None:
                 gh_target = parse_github_url(target_str)
             except InvalidURLError:
                 gh_target = None
+
+        # --post writes to a real issue, so never guess the target from the cwd's git remote
+        # or from digits in a file name.
+        if args.post and gh_target is None and not (args.repo_name and args.issue_number):
+            sys.stderr.write(
+                "Error: --post needs a GitHub issue/PR URL as the target, "
+                "or both --repo-name owner/repo and --issue-number N\n"
+            )
+            sys.exit(2)
 
         if gh_target is not None:
             try:

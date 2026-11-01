@@ -504,3 +504,43 @@ def test_real_docker_sandbox_timeout_terminates_cleanly():
 
 
 
+
+
+def _clean_run():
+    mock_run = MagicMock()
+    mock_run.returncode = 0
+    mock_run.stdout = "None\n"
+    mock_run.stderr = ""
+    return mock_run
+
+
+def test_sandbox_clean_run_on_missing_exception_bug_is_inconclusive():
+    # "should raise ValueError but returns None": the clean run IS the bug, so it must not
+    # count against the claim just because "error" appears in the text.
+    claim = Claim(
+        id="c1", type="bug_behavior", repro="print(parse(''))",
+        quote="should raise ValueError but returns None", actual="returns None, no error raised",
+    )
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True), \
+         patch("subprocess.run", return_value=_clean_run()):
+        res = run_sandbox_repro(claim)
+    assert res.outcome == "inconclusive"
+
+
+@pytest.mark.parametrize("actual", ["does not raise KeyError", "returns {} without raising KeyError"])
+def test_sandbox_negated_exception_is_not_a_crash_claim(actual):
+    claim = Claim(id="c1", type="bug_behavior", repro="print(get({}, 'a'))", quote="lookup is silent", actual=actual)
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True), \
+         patch("subprocess.run", return_value=_clean_run()):
+        res = run_sandbox_repro(claim)
+    assert res.outcome == "inconclusive"
+
+
+def test_sandbox_named_crash_with_clean_run_still_contradicts():
+    claim = Claim(id="c1", type="bug_behavior", repro="print(get({}, 'a'))",
+                  quote="get crashes with KeyError", actual="crashes with KeyError")
+    with patch("probe.verify.sandbox.is_docker_available", return_value=True), \
+         patch("subprocess.run", return_value=_clean_run()):
+        res = run_sandbox_repro(claim)
+    assert res.outcome == "contradicts"
+    assert res.details["reason"] == "ran_clean"
