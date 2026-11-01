@@ -26,9 +26,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
-load_dotenv()
 
 import httpx
 from dotenv import find_dotenv, load_dotenv
