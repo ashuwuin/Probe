@@ -290,6 +290,15 @@ Probe is evaluated against real closed issues and pull requests from major open-
 - **Real-world repros usually need the project's dependencies.** Most real reports lack runnable repro scripts, and those that include snippets often need third-party packages not pre-installed in `python:3.11-slim` (stopping at `uncertain: missing_dependency`). Planned: per-project environment images, built once with network access for chosen benchmark repos and then used with `--network none` for every check. These would never be built automatically for arbitrary repositories, because installing a package runs untrusted code.
 - **Repros in pull requests are not executed.** On a PR the snapshot is the PR's own changed code, so a clean run would mean "the fix works", not "cannot reproduce", and a crash may be a broken fix. These are reported as `inconclusive` until a base-vs-head comparison exists.
 - **Python first.** JS/TS/Rust/Go only get regex-based "does this definition exist" hints.
+- **Static check on a PR head can wrongly say `invalid`.** A PR that removes or renames a function makes the "symbol not found" evidence come from the PR's own code. Planned: skip that rule for PR claims, or check against the base commit.
+- **Paths from the reporter's machine** (e.g. `/home/u/proj/src/mod.py`) are matched only by their full suffix, so a file-only claim can end up `invalid`. Planned: retry with shorter suffixes and stay `inconclusive` for absolute paths.
+- **"Adds tests" detection is approximate.** Test files such as Django's `tests.py`, `*_spec.js`, `*Test.java` or Rust inline `mod tests` are missed, while test-looking functions in non-test files can count. Planned: widen the file patterns and only count new tests inside test files.
+- **A repro's own `raise` or failing `assert` counts as "reproduced".** A reporter's script that fails by itself can confirm a claim. Planned: require a traceback frame in the project's code.
+- **Search is not exhaustive.** Files over 1 MB are skipped, some languages (`.java`, `.kt`, `.rb`, `.php`) are not scanned for mentions, and ignored directories such as `build/` are skipped at any depth.
+- **Concurrency.** An issue edited right after opening can produce two comments, and jobs beyond `PROBE_MAX_CONCURRENT_JOBS` that wait over 60 s are dropped, not queued.
+- **CLI leftovers.** `--model` is not passed to extraction, and `--no-llm` uses an older regex extractor than the one the App falls back to.
+- **Overall verdict wording.** A PR that only adds tests reads `confirmed` even though the fix itself is unverified.
+- **Benchmark output paths.** `benchmark.py --mode extracted` overwrites `RESULTS.md` and `results.json` unless `--out`/`--json` are given.
 
 ---
 
