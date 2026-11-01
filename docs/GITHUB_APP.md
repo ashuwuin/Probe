@@ -119,9 +119,10 @@ smee -u https://smee.io/<your-channel> -t http://127.0.0.1:8000/webhook
    - Unauthorized comments by third-party strangers are ignored.
    - The bot ignores comments created by bot accounts to strictly prevent infinite webhook feedback loops.
 
-6. **Fork PR Sandbox Protection**:
-   - For pull requests originating from forks, Docker sandbox reproduction is automatically skipped for untrusted authors, executing only deterministic AST and unified diff checkers.
-   - Maintainers can explicitly authorize sandbox reproduction for a fork PR by commenting `/probe rerun`.
+6. **Untrusted Issue & PR Sandbox Protection**:
+   - For incoming issues, Docker sandbox reproduction runs automatically only when opened by repository maintainers (`OWNER`, `MEMBER`, or `COLLABORATOR`). Issues opened by external contributors run deterministic AST checks only, preventing untrusted server-side compute execution.
+   - Maintainers can explicitly authorize sandbox reproduction for any issue by commenting `/probe rerun`.
+   - On pull requests, reproduction scripts are not executed against the PR head (since a clean run means "the fix works" rather than "cannot reproduce"); PRs are evaluated via AST and diff checks.
 
 7. **Concurrency Limiting & Abuse Prevention**:
    - Concurrency is throttled to `PROBE_MAX_CONCURRENT_JOBS` (default: 2) to protect host resources.
