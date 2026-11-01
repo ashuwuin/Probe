@@ -271,6 +271,9 @@ async def github_webhook(
                 content={"status": "already_queued", "target": f"{owner}/{repo}#{number}"},
             )
 
+        author_assoc = (issue.get("author_association") or "").upper()
+        allow_sandbox = author_assoc in ("OWNER", "MEMBER", "COLLABORATOR")
+
         _ACTIVE_JOBS.add(dedup_key)
         background_tasks.add_task(
             process_triage_job,
@@ -280,7 +283,7 @@ async def github_webhook(
             is_pr=False,
             dedup_key=dedup_key,
             installation_id=installation_id,
-            allow_sandbox=True,
+            allow_sandbox=allow_sandbox,
         )
 
         return JSONResponse(
@@ -290,6 +293,7 @@ async def github_webhook(
                 "event": "issues",
                 "action": action,
                 "target": f"{owner}/{repo}#{number}",
+                "allow_sandbox": allow_sandbox,
             },
         )
 
