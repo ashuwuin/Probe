@@ -144,6 +144,44 @@ def test_webhook_issues_opened(client):
     assert data["event"] == "issues"
 
 
+def test_webhook_issues_opened_by_stranger_disallows_sandbox(client):
+    payload = {
+        "action": "opened",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 420, "updated_at": "2026-11-01T00:00:00Z", "author_association": "NONE"},
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    data = res.json()
+    assert data["status"] == "accepted"
+    assert data["allow_sandbox"] is False
+
+
+def test_webhook_issues_opened_by_maintainer_allows_sandbox(client):
+    payload = {
+        "action": "opened",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 421, "updated_at": "2026-11-01T00:00:00Z", "author_association": "MEMBER"},
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    data = res.json()
+    assert data["status"] == "accepted"
+    assert data["allow_sandbox"] is True
+
+
 def test_webhook_issues_edited_with_body_change_accepted(client):
     payload = {
         "action": "edited",

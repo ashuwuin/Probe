@@ -575,8 +575,6 @@ def test_cli_main_triage_github_url_not_found(monkeypatch):
         assert exc.value.code == 1
 
 
-
-
 # ---------------------------------------------------------------- repros on pull requests
 
 def test_pull_request_repro_is_not_run_against_pr_head(tmp_path):
@@ -646,3 +644,9 @@ def test_post_without_explicit_target_is_refused(tmp_path, monkeypatch, capsys, 
     assert "--post needs" in capsys.readouterr().err
     post.assert_not_called()
     pipeline.assert_not_called()
+def test_python_module_entrypoint():
+    """Ensure probe.__main__ executes main()."""
+    import runpy
+    with patch("probe.cli.main") as mock_main:
+        runpy.run_module("probe", run_name="__main__")
+        mock_main.assert_called_once()

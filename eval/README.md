@@ -57,7 +57,7 @@ The benchmark evaluates 12 real, closed issues from Loguru, Poetry, Rich, and Te
 Probe enforces strict safety:
 - **0 wrong `invalid` verdicts**: Probe never falsely accuses a real bug report of being invalid.
 - **0 decisive verdicts without evidence**: Every non-uncertain verdict requires supporting or contradicting checks.
-- Most real reports contain no runnable reproduction, so their behaviour claims stay `uncertain` ("no applicable check", or only a symbol found). Where a repro exists (e.g. rich-2988 in extracted mode) it stops at `missing_dependency`, because the zero-network sandbox (`python:3.11-slim`) has no project dependencies.
+- Most real-world bug reports lack self-contained reproduction scripts entirely (reporters describe symptoms or paste tracebacks without runnable code, resulting in `no_applicable_check`). Where reproduction snippets are provided, they frequently require external project dependencies (e.g. `rich-2988` requiring `click` and `cffi`) that are not pre-installed in the clean `python:3.11-slim` image. In Probe's hardened zero-network sandbox (`--network none`), network access is disabled at triage time to prevent SSRF and token leaks, so missing imports safely stop at `uncertain` with reason `missing_dependency` rather than guessing.
 
 ### Checkable cases group
 To evaluate Probe's deterministic checkers and decision rules with ground truth evidence, the benchmark includes a **checkable cases** group:
