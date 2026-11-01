@@ -131,6 +131,17 @@ def _exc_matches(name1: str | None, name2: str | None) -> bool:
     return name1.split(".")[-1] == name2.split(".")[-1]
 
 
+_NEGATED_EXC_RE = re.compile(
+    r"\b(?i:no|not|never|without|doesn't|didn't)\s+(?:[a-z]+\s+){0,2}?"
+    r"(?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception)\b"
+)
+
+
+def _strip_negated_exceptions(text: str) -> str:
+    """Drops exception names that the text says did NOT happen ("no KeyError", "does not raise ValueError")."""
+    return _NEGATED_EXC_RE.sub(" ", text)
+
+
 def is_docker_available(image: str = DEFAULT_IMAGE) -> bool:
     """Checks whether Docker CLI is installed, the daemon is running, and the sandbox image is present."""
     if not shutil.which("docker"):
@@ -337,7 +348,7 @@ def run_sandbox_repro(
             for match in re.finditer(pat, combined_context, re.I):
                 expected_exc_matches.append(match.group(1))
 
-        actual_text = claim.actual or ""
+        actual_text = _strip_negated_exceptions(claim.actual or "")
         actual_claimed_matches = re.findall(
             r"\b((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\b", actual_text
         )
@@ -346,7 +357,7 @@ def run_sandbox_repro(
             if not any(_exc_matches(e, exp) for exp in expected_exc_matches)
         ]
 
-        quote_text = claim.quote or ""
+        quote_text = _strip_negated_exceptions(claim.quote or "")
         quote_exc_matches = re.findall(
             r"\b((?:[a-zA-Z_][a-zA-Z0-9_]*\.)*[A-Z][A-Za-z0-9]*(?:Error|Exception))\b", quote_text
         )
@@ -488,10 +499,10 @@ def run_sandbox_repro(
         else:
             # Script executed with exit code 0
             has_assert = bool(re.search(r"\bassert\b", claim.repro))
-            claims_crash = bool(
-                claimed_exc
-                or (claim.actual and re.search(r"\b(?:crash|crashes|exception|traceback|error|raises?)\b", claim.actual, re.I))
-            )
+            # Only a named exception (or an assert) counts as a claimed crash. Words like "error"
+            # also appear in "should raise ValueError but returns None, no error raised", where
+            # the clean run IS the bug.
+            claims_crash = bool(claimed_exc)
 
             # If snippet was an expected behavior demonstration, clean execution is expected
             is_expected_demo = bool(

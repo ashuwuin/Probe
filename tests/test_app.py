@@ -317,7 +317,8 @@ def test_webhook_issue_comment_rerun_by_issue_author(client):
     assert res.status_code == 202
     data = res.json()
     assert data["status"] == "accepted"
-    assert data["allow_sandbox"] is True
+    # The author may rerun Probe, but only a maintainer may run their repro in Docker.
+    assert data["allow_sandbox"] is False
 
 
 def test_webhook_issue_comment_rerun_pr_by_fork_author_disallows_sandbox(client):
@@ -575,3 +576,53 @@ def test_process_triage_job_pr_updates_existing_comment(tmp_path):
 
         mock_gh.update_comment.assert_called_once()
         mock_gh.post_comment.assert_not_called()
+
+
+def _issue_opened(client, number, association):
+    payload = {
+        "action": "opened",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": number, "updated_at": "2026-11-01T00:00:00Z", "author_association": association},
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    return client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issues", "X-Hub-Signature-256": sign_payload(body)},
+    )
+
+
+@pytest.mark.parametrize(
+    ("association", "expected"),
+    [("NONE", False), ("CONTRIBUTOR", False), ("FIRST_TIME_CONTRIBUTOR", False), ("", False),
+     ("MEMBER", True), ("OWNER", True), ("COLLABORATOR", True)],
+)
+def test_webhook_issue_sandbox_only_for_maintainer_authors(client, association, expected):
+    res = _issue_opened(client, 700 + len(association), association)
+    assert res.status_code == 202
+    assert res.json()["allow_sandbox"] is expected
+
+
+def test_webhook_issue_comment_rerun_on_issue_by_maintainer_allows_sandbox(client):
+    payload = {
+        "action": "created",
+        "repository": {"name": "demo", "owner": {"login": "octo"}},
+        "issue": {"number": 77, "user": {"login": "stranger"}},
+        "comment": {
+            "id": 7701,
+            "body": "/probe rerun",
+            "user": {"login": "maint", "type": "User"},
+            "author_association": "MEMBER",
+        },
+        "installation": {"id": 12345},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    res = client.post(
+        "/webhook",
+        content=body,
+        headers={"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert res.status_code == 202
+    assert res.json()["is_pr"] is False
+    assert res.json()["allow_sandbox"] is True

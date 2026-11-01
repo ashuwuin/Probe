@@ -114,7 +114,7 @@ The same pipeline runs from a **CLI** (`probe triage <issue-url>`), so we can de
 |---|---|---|---|
 | **A. Static** | `symbol_exists`, and is a precondition for every other type | Python `ast` (tree-sitter later for other languages) finds def/class/assignment; if the file isn't found, searches the whole repo for the symbol; fuzzy-matches near-misses (`parse_url_v2` → `parse_url`) | `found at src/urls.py:42` / `not found; closest: parse_url (src/urls.py:42)` |
 | **B. Sandbox** | `bug_behavior`, `security_vuln` (when there is a repro) | Runs the repro inside the isolated sandbox (§4) at the claimed version and compares the result with the claim (exception type, exit code, output substring) | command, exit code, last 40 lines of stdout/stderr, runtime |
-| **C. PR coverage** | `pr_adds_tests`, `pr_fixes_issue` | Runs the PR's tests in the sandbox under `coverage.py`, then intersects the covered lines with the lines the diff changed. Checks that the PR actually touches the files/symbols of the linked issue. | `% of changed lines covered`, uncovered line list, tests run / passed |
+| **C. PR coverage** *(planned, not implemented; today `verify/pr_diff.py` checks the diff only)* | `pr_adds_tests`, `pr_fixes_issue` | Runs the PR's tests in the sandbox under `coverage.py`, then intersects the covered lines with the lines the diff changed. Checks that the PR actually touches the files/symbols of the linked issue. | `% of changed lines covered`, uncovered line list, tests run / passed |
 | **D. Version** | `version_affected` | Checks the version against git tags and PyPI release list | `tag v2.4.1 exists` / `no such release` |
 
 The router runs **static first**. If the symbol doesn't exist, we skip the sandbox: it would be slow and pointless.
@@ -212,20 +212,21 @@ Probe/
 ├── docs/ARCHITECTURE.md         # this file
 ├── src/probe/
 │   ├── app.py                   # FastAPI webhook (3.1)
-│   ├── github_client.py         # App auth, fetch, comment (3.2, 3.6)
-│   ├── llm.py                   # Ollama client + fake (3.3)
-│   ├── extract.py               # claim schema + extraction (3.3)
+│   ├── github_auth.py           # GitHub App JWT + installation tokens
+│   ├── github_client.py         # fetch issues/PRs, snapshots, comments (3.2, 3.6)
+│   ├── extract.py               # Ollama extraction + regex fallback (3.3)
+│   ├── models.py                # Claim / CheckResult / Verdict schemas
 │   ├── verify/
 │   │   ├── static.py            # A
 │   │   ├── sandbox.py           # B
-│   │   ├── coverage.py          # C
-│   │   └── version.py           # D
+│   │   └── pr_diff.py           # C (diff-based; coverage and version checks not built)
 │   ├── verdict.py               # rule table (§5)
+│   ├── evaluation.py            # benchmark helpers
 │   ├── report.py                # Markdown + JSON (3.6)
-│   └── cli.py                   # `probe triage <url>`
+│   └── cli.py                   # `probe triage <url>`, `probe serve`
 ├── tests/  (+ fixtures/)
 ├── examples/
-└── eval/ (cases/, run_eval.py, RESULTS.md)
+└── eval/ (cases/, benchmark.py, compare_extraction.py, RESULTS.md)
 ```
 
 ---

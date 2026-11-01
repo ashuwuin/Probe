@@ -605,3 +605,44 @@ def test_issue_repro_still_runs_in_sandbox(tmp_path):
     with patch.object(cli_module, "run_sandbox_repro", side_effect=fake) as sandbox:
         cli_module.run_triage_pipeline(text, tmp_path, is_pull_request=False, use_llm=False)
     assert sandbox.called
+
+
+# ---------------------------------------------------------------- .env and --post safety
+
+def test_main_loads_dotenv_without_overriding(tmp_path, monkeypatch):
+    import os
+    from probe import cli
+
+    (tmp_path / ".env").write_text("PROBE_TEST_FROM_DOTENV=from_file\nPROBE_TEST_ALREADY_SET=from_file\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PROBE_TEST_FROM_DOTENV", raising=False)
+    monkeypatch.setenv("PROBE_TEST_ALREADY_SET", "from_env")
+    monkeypatch.setattr(sys, "argv", ["probe", "triage", "text", "--post"])
+    with pytest.raises(SystemExit):
+        cli.main()
+    try:
+        assert os.environ["PROBE_TEST_FROM_DOTENV"] == "from_file"
+        assert os.environ["PROBE_TEST_ALREADY_SET"] == "from_env"
+    finally:
+        os.environ.pop("PROBE_TEST_FROM_DOTENV", None)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [[], ["--repo-name", "octo/demo"], ["-n", "5"]],
+)
+def test_post_without_explicit_target_is_refused(tmp_path, monkeypatch, capsys, extra):
+    from probe import cli
+
+    issue = tmp_path / "issue_42.md"
+    issue.write_text("`apply_discount()` crashes with KeyError")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["probe", "triage", str(issue), "--post", "--no-llm", *extra])
+    with patch("probe.cli.post_or_update_comment") as post, \
+         patch("probe.cli.run_triage_pipeline") as pipeline:
+        with pytest.raises(SystemExit) as exc:
+            cli.main()
+    assert exc.value.code == 2
+    assert "--post needs" in capsys.readouterr().err
+    post.assert_not_called()
+    pipeline.assert_not_called()

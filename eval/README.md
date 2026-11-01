@@ -47,9 +47,8 @@ PYTHONPATH=src python eval/benchmark.py --mode extracted  # LLM claims (needs pr
 Snapshots are downloaded once and cached by SHA in `~/.cache/probe/repos`.
 Set `GITHUB_TOKEN` for higher rate limits.
 
-Verdicts come from `probe.verdict.decide_claim(claim, results)` when that exists.
-Until then a conservative baseline in `probe/evaluation.py` is used, and
-`RESULTS.md` says which one produced the numbers.
+Verdicts come from Probe's real rules in `probe.verdict` (the conservative baseline in
+`probe/evaluation.py` is only a fallback), and `RESULTS.md` says which one produced the numbers.
 
 ## Current status (honest reading)
 
@@ -58,7 +57,7 @@ The benchmark evaluates 12 real, closed issues from Loguru, Poetry, Rich, and Te
 Probe enforces strict safety:
 - **0 wrong `invalid` verdicts**: Probe never falsely accuses a real bug report of being invalid.
 - **0 decisive verdicts without evidence**: Every non-uncertain verdict requires supporting or contradicting checks.
-- Real-repo reproduction snippets in these external projects require their respective project dependencies (e.g. `click`, `cffi`, `rich`). In Probe's hardened zero-network sandbox (`--network none`), network access is disabled at triage time to prevent SSRF and token leaks, and third-party packages are not pre-installed in the clean `python:3.11-slim` image. When an uninstalled dependency is encountered, Probe safely stops at `uncertain` with reason `missing_dependency` rather than guessing.
+- Most real reports contain no runnable reproduction, so their behaviour claims stay `uncertain` ("no applicable check", or only a symbol found). Where a repro exists (e.g. rich-2988 in extracted mode) it stops at `missing_dependency`, because the zero-network sandbox (`python:3.11-slim`) has no project dependencies.
 
 ### Checkable cases group
 To evaluate Probe's deterministic checkers and decision rules with ground truth evidence, the benchmark includes a **checkable cases** group:
